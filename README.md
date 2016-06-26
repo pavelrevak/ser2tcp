@@ -1,2 +1,3 @@
 # ser2tcp
-serial to tcp or telnet server, ser2net python alternative
+Simple proxy for connecting over TCP or telnet to serial port
+
