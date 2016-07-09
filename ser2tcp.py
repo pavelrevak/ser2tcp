@@ -20,7 +20,7 @@ class Ser2TcpConnection():
         if self._telnet:
             self.send((0xff, 0xfd, 0x22))
             self.send((0xff, 0xfb, 0x01))
-        self._log.info("Client connected: %s:%d", self._socket, self._addr)
+        self._log.info("Client connected: %s:%d", self._addr[0], self._addr[1])
 
     def __del__(self):
         self.close()
@@ -35,7 +35,7 @@ class Ser2TcpConnection():
         if self._socket:
             self._socket.close()
             self._socket = None
-            self._log.info("Client disconnected: %s:%d", self._socket, self._addr)
+            self._log.info("Client disconnected: %s:%d", self._addr[0], self._addr[1])
 
     def fileno(self):
         """emulate fileno method of socket"""
