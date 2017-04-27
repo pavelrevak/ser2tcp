@@ -22,6 +22,6 @@ python ser2tcp.py COM1 115200 ODD TWO -l 0:10001 -v
 python ser2tcp.py --help                                              
 ```
 
-## requirements
+## Requirements
 - python v3.4+
 - pyserial v3.0+
