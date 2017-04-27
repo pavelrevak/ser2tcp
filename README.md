@@ -20,3 +20,8 @@ python ser2tcp.py /dev/ttyS0 9600
 python ser2tcp.py /dev/tty.SLAB_USBtoUART 115200 EVEN -l 0:10001 -t -v
 python ser2tcp.py COM1 115200 ODD TWO -l 0:10001 -v
 python ser2tcp.py --help                                              
+```
+
+## requirements
+python v3.4+
+pyserial v3.0+
