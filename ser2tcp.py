@@ -2,6 +2,7 @@
 Simple proxy for connecting over TCP or telnet to serial port
 """
 
+import sys
 import select
 import socket
 import argparse
@@ -232,6 +233,16 @@ https://github.com/pavelrevak/ser2tcp
 
 def main():
     """Main"""
+    # test version of python
+    if sys.version_info < (3, 4):
+        print("Wrong python version, required is at lease 3.4")
+        exit(1)
+    # test pyserial version
+    pyserial_version = [int(i) for i in serial.__version__.split('.')]
+    if pyserial_version[0] < 3:
+        print("Wrong pyserial version, required is at lease 3.0")
+        exit(1)
+
     parser = argparse.ArgumentParser(description=DESCRIPTION_STR)
     parser.add_argument('-V', '--version', action='version', version=VERSION_STR)
     parser.add_argument(
@@ -282,5 +293,4 @@ def main():
 
 
 if __name__ == '__main__':
-
     main()
