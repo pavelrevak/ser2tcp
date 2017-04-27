@@ -23,5 +23,5 @@ python ser2tcp.py --help
 ```
 
 ## requirements
-python v3.4+
-pyserial v3.0+
+- python v3.4+
+- pyserial v3.0+
