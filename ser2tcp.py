@@ -326,7 +326,11 @@ def main():
     parser.add_argument('-V', '--version', action='version', version=VERSION_STR)
     parser.add_argument(
         '-v', '--verbose', action='count', default=0,
-        help="Increase verbosity *")
+        help="Increase verbosity")
+    parser.add_argument(
+        '-c', '--config',
+        help="Configuration file,"
+        " where each line has definition of one {connection}")
     parser.add_argument(
         'connection', nargs=argparse.REMAINDER,
         help="{host} {port} [RAW|TELNET]"
@@ -349,6 +353,12 @@ def main():
         sys.exit(1)
 
     connections = []
+    if args.config:
+        with open(args.config, 'r', encoding='utf-8') as config_file:
+            for line in config_file.readlines():
+                config_line = line.strip()
+                if config_line and not config_line.startswith('#'):
+                    connections.append(Config(config_line.split()))
     try:
         if args.connection:
             connections.append(Config(args.connection))
