@@ -446,12 +446,11 @@ def main():
     log.setLevel((30, 20, 10)[min(2, args.verbose)])
 
     # check version of python
-    if sys.version_info < (3, 6):
+    if sys.version_info < (3, 5):
         log.error("Wrong python version, required is at lease 3.5")
         sys.exit(1)
     # check pyserial version
-    pyserial_version = [int(i) for i in serial.__version__.split('.')]
-    if pyserial_version[0] < 3:
+    if serial.__version__ < '3.0':
         log.error("Wrong pyserial version, required is at lease 3.0")
         sys.exit(1)
 
