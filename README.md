@@ -90,6 +90,10 @@ this allow full control of the serial port
 ```
 python3 ser2tcp.py -c ser2tcp.conf
 ```
+For installed version:
+```
+ser2tcp -c ser2tcp.conf
+```
 
 ### Connecting using telnet
 ```
