@@ -14,6 +14,15 @@ Simple proxy for connecting over TCP or telnet to serial port
     - each connected client can sent to serial port
     - serial port send received data to all connected clients
 
+## Instalation
+```
+pip3 install .
+```
+
+### Uninstal
+```
+pip3 uninstall ser2tcp
+```
 
 ## command line options
 ```
