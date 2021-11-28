@@ -32,9 +32,8 @@ class ConnectionTelnet(_connection.Connection):
     }
 
     def __init__(self, connection, ser, log=None):
-        super().__init__(connection, ser, log)
-        # self._socket.send(b'\xff\xfd\x22')
-        # self._socket.send(b'\xff\xfb\x01')
+        super().__init__(connection, log)
+        self._serial = ser
         self._socket.send(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
         self._socket.send(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
         self._telnet_iac = False

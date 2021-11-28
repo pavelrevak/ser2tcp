@@ -5,10 +5,9 @@ import logging as _logging
 
 class Connection():
     """Connection"""
-    def __init__(self, connection, ser, log=None):
+    def __init__(self, connection, log=None):
         self._log = log if log else _logging.Logger(self.__class__.__name__)
         self._socket, self._addr = connection
-        self._serial = ser
 
     def __del__(self):
         self.close()

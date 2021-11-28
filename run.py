@@ -1,7 +1,7 @@
 """__main__"""
 
-import ser2tcp._app as _app
+import ser2tcp.main
 
 
 if __name__ == '__main__':
-    _app.main()
+    ser2tcp.main.main()

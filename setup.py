@@ -53,7 +53,7 @@ setuptools.setup(
 
     entry_points={
         'console_scripts': [
-            '%s=ser2tcp._app:main' % APP_NAME,
+            '%s=ser2tcp.main:main' % APP_NAME,
         ],
     },
     include_package_data=True,

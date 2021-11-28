@@ -26,5 +26,3 @@ class ServersManager():
         """Close all servers"""
         for server in self._servers:
             server.close()
-
-

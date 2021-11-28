@@ -1,5 +1,7 @@
 """Server"""
 
+# pylint: disable=C0209
+
 import socket as _socket
 import logging as _logging
 import ser2tcp.connection_tcp as _connection_tcp
@@ -43,7 +45,7 @@ class Server():
     def _client_connect(self):
         """connect to client, will accept waiting connection"""
         sock, addr = self._socket.accept()
-        if not self._connections and not serial:
+        if not self._connections:
             if not self._serial.connect():
                 self._log.info("Client canceled: %s:%d", *addr)
                 sock.close()

@@ -87,12 +87,13 @@ pip3 uninstall ser2tcp
 this allow full control of the serial port
 
 ## Usage examples
-```
-python3 ser2tcp.py -c ser2tcp.conf
-```
 For installed version:
 ```
 ser2tcp -c ser2tcp.conf
+```
+Direct running from repository:
+```
+python3 run.py -c ser2tcp.conf
 ```
 
 ### Connecting using telnet
