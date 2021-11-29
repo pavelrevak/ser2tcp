@@ -3,36 +3,19 @@
 
 import setuptools
 
-APP_NAME = "ser2tcp"
-VERSION = "3.0"
-AUTHOR = "Pavel Revak"
-AUTHOR_EMAIL = "pavel.revak@gmail.com"
-DESCRIPTION = "Serial bridge to TCP or TELNET"
-URL = "https://github.com/pavelrevak/pyswd"
-KEYWORDS = 'serial tcp telnet bridge'
-
-
-def get_long_description():
-    """Return long description from README.md file"""
-    import os
-    import codecs
-    current_dir = os.path.abspath(os.path.dirname(__file__))
-    readme_file = os.path.join(current_dir, 'README.md')
-    with codecs.open(readme_file, encoding='utf-8') as readme_file:
-        long_description = readme_file.read()
-    return long_description
-
 
 setuptools.setup(
-    name=APP_NAME,
-    version=VERSION,
-    description=DESCRIPTION,
-    long_description=get_long_description(),
-    url=URL,
-    author=AUTHOR,
-    author_email=AUTHOR_EMAIL,
-    license='MIT',
-    keywords=KEYWORDS,
+    name="ser2tcp",
+    version="3.0",
+    description="Serial proxy to TCP or TELNET",
+    long_description=(
+        "Python serial port proxy to TCP or TELNET"
+        "Project page: https://github.com/pavelrevak/ser2tcp"),
+    url="https://github.com/pavelrevak/ser2tcp",
+    author="Pavel Revak",
+    author_email="pavel.revak@gmail.com",
+    license="MIT",
+    keywords="serial tcp telnet",
 
     classifiers=[
         # https://pypi.python.org/pypi?%3Aaction=list_classifiers
@@ -42,6 +25,8 @@ setuptools.setup(
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 3',
     ],
+
+    python_requires='>3.5',
 
     packages=[
         'ser2tcp',
@@ -53,7 +38,7 @@ setuptools.setup(
 
     entry_points={
         'console_scripts': [
-            '%s=ser2tcp.main:main' % APP_NAME,
+            'ser2tcp=ser2tcp.main:main',
         ],
     },
     include_package_data=True,
