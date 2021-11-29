@@ -36,21 +36,12 @@ def main():
         help="Increase verbosity")
     parser.add_argument(
         '-c', '--config', required=True,
-        help="configuration in json format")
+        help="configuration in JSON format")
     args = parser.parse_args()
 
     _logging.basicConfig(format='%(asctime)-15s %(levelname)s : %(message)s')
     log = _logging.getLogger('ser2tcp')
     log.setLevel((30, 20, 10)[min(2, args.verbose)])
-
-    # check version of python
-    if _sys.version_info < (3, 5):
-        log.error("Wrong python version, required is at lease 3.5")
-        _sys.exit(1)
-    # check pyserial version
-    if _serial.__version__ < '3.0':
-        log.error("Wrong pyserial version, required is at lease 3.0")
-        _sys.exit(1)
 
     configuration = []
     with open(args.config, "r", encoding='utf-8') as config_file:

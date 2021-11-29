@@ -102,7 +102,43 @@ telnet 0 10012
 ```
 (to exit telnet press `CTRL + ]` and type `quit`)
 
+## Installation as server
+### Linux - systemd local user service
+1. edit configuration file `~/.config/ser2tcp.conf`
+1. reload user systemd services:
+    ```
+    systemctl --user daemon-reload
+    ```
+1. start service:
+    ```
+    systemctl --user start ser2tcp
+    ```
+1. auto-start service:
+    ```
+    systemctl --user enable ser2tcp
+    ```
+1. to allow user services running after boot you need to enable linger as root (if this is not configured, then service will start after user login and stop after logout):
+    ```
+    sudo loginctl enable-linger $USER
+    ```
 
+#### Other useful commands
+* check if service is running:
+    ```
+    systemctl --user status ser2tcp
+    ```
+* stop service:
+    ```
+    systemctl --user stop ser2tcp
+    ```
+* stop restart:
+    ```
+    systemctl --user restart ser2tcp
+    ```
+* see logs from service:
+    ```
+    journalctl --user-unit ser2tcp -e
+    ```
 ## Requirements
 - python v3.5+
 - pyserial v3.0+
