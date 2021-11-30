@@ -3,7 +3,6 @@
 
 import setuptools
 
-
 setuptools.setup(
     name="ser2tcp",
     version="3.0",
