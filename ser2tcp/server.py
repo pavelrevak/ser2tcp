@@ -89,8 +89,12 @@ class Server():
             self._client_connect()
         for con in self._connections:
             if con.socket() in read_sockets:
-                data = con.socket().recv(4096)
-                self._log.debug("(%s:%d): %s", *con.get_address(), data)
+                data = b''
+                try:
+                    data = con.socket().recv(4096)
+                    self._log.debug("(%s:%d): %s", *con.get_address(), data)
+                except ConnectionResetError:
+                    self._log.info("(%s:%d): Connection reset by peer", *con.get_address())
                 if not data:
                     con.close()
                     self._connections.remove(con)
