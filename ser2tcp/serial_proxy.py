@@ -113,7 +113,8 @@ class SerialProxy():
                 data = self._serial.read(size=self._serial.in_waiting)
                 self._log.debug("(%s): %s", self._serial_config['port'], data)
                 self.send_to_connections(data)
-            except _serial.SerialException:
+            except (OSError, _serial.SerialException) as err:
+                self._log.warning(err)
                 for server in self._servers:
                     server.close_connections()
                 self.disconnect()

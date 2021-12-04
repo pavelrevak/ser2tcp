@@ -7,7 +7,6 @@ import argparse as _argparse
 import logging as _logging
 import signal as _signal
 import json as _json
-import serial as _serial
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server_manager as _server_manager
 
@@ -39,7 +38,7 @@ def main():
         help="configuration in JSON format")
     args = parser.parse_args()
 
-    _logging.basicConfig(format='%(asctime)-15s %(levelname)s : %(message)s')
+    _logging.basicConfig(format='%(levelname).1s: %(message)s (%(filename)s:%(lineno)s)')
     log = _logging.getLogger('ser2tcp')
     log.setLevel((30, 20, 10)[min(2, args.verbose)])
 
@@ -48,13 +47,9 @@ def main():
         configuration = _json.load(config_file)
 
     servers_manager = _server_manager.ServersManager()
-    try:
-        for config in configuration:
-            servers_manager.add_server(_serial_proxy.SerialProxy(config, log))
-        while True:
-            servers_manager.process()
-    except OSError as err:
-        log.info(err)
-    finally:
-        log.info("Exiting..")
-        servers_manager.close()
+    for config in configuration:
+        servers_manager.add_server(_serial_proxy.SerialProxy(config, log))
+    while True:
+        servers_manager.process()
+    log.info("Exiting..")
+    servers_manager.close()
