@@ -10,11 +10,6 @@ class ConnectionTcp(_connection.Connection):
         self._serial = ser
         self._log.info("Client connected: %s:%d TCP", *self._addr)
 
-    def send(self, data):
-        """Send data to client"""
-        if data:
-            self._socket.send(data)
-
     @staticmethod
     def list_pull_first(data):
         """get first entry from array"""

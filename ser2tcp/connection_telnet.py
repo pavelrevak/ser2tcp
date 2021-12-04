@@ -34,8 +34,8 @@ class ConnectionTelnet(_connection.Connection):
     def __init__(self, connection, ser, log=None):
         super().__init__(connection, log)
         self._serial = ser
-        self._socket.send(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
-        self._socket.send(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
+        self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
+        self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
         self._telnet_iac = False
         self._telnet_state = None
         self._subnegotiation_frame = None
@@ -43,7 +43,7 @@ class ConnectionTelnet(_connection.Connection):
 
     def send(self, data):
         """Send data to client"""
-        self._socket.send(data.replace(b'\xff', b'\xff\xff'))
+        super().send(data.replace(b'\xff', b'\xff\xff'))
 
     def _telnet_subnegotiation(self, subnegotiation):
         """Process subnegotiation frame"""

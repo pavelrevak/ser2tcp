@@ -30,3 +30,7 @@ class Connection():
     def get_address(self):
         """Return address"""
         return self._addr
+
+    def send(self, data):
+        """Send data to client"""
+        self._socket.sendall(data)
