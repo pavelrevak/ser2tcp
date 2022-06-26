@@ -32,7 +32,8 @@ setuptools.setup(
     ],
 
     install_requires=[
-        'pyserial (>=3.0)'
+        'pyserial (>=3.0)',
+        'pydantic'
     ],
 
     entry_points={
