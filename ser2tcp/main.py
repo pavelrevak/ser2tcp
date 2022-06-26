@@ -44,6 +44,9 @@ def main():
     parser.add_argument(
         '-g', '--global_log_config', required=False,
         help="global logging configuration in JSON format")
+    parser.add_argument(
+        '-t', '--test_config', action='count', default=0,
+        help="parse the Json config to check for errors, then exit")
     args = parser.parse_args()
 
     # logger initialization
@@ -66,6 +69,10 @@ def main():
         path=args.config,
         encoding='utf-8',
     )
+
+    if args.test_config:
+        log.info("Only check the config, shutting down.")
+        _sys.exit(0)
 
     log.info(f"Starting ser2tcp with configuration:\n{serial_configuration}")
 
