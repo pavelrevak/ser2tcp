@@ -46,6 +46,7 @@ optional arguments:
                         configuration in JSON format
   -g GLOBAL_LOG_CONFIG, --global_log_config GLOBAL_LOG_CONFIG
                         global logging configuration in JSON format
+  -t, --test_config     parse the Json config to check for errors, then exit
 ```
 
 ### Verbose
