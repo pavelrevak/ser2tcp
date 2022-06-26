@@ -14,7 +14,7 @@ Simple proxy for connecting over TCP or telnet to serial port
     - each connected client can sent to serial port
     - serial port send received data to all connected clients
 - parsing of the json config files via pydantic
-- logging via off the shelf python logging json [configuration](https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)
+- Flexible logging via the python logging module [configuration](https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)
     - either on a per port serial config
     - or a global configuration
 
@@ -51,7 +51,27 @@ optional arguments:
 - `-v`: will print INFO messages
 - `-vv`: print also DEBUG messages
 
-## Configuration file example (no logging, global or port based)
+## Configuration
+
+The configuration is a json list, each list item containing:
+- `serial`: dictionary describing the parameters needed to open the serial connection.
+  - port: name of the device to connect to.
+  - baudrate (optional, default: 115200) any valid serial speed that pySerial accepts
+  - parity (optional, default: 'NONE') one of['ONE', 'ONE_POINT_FIVE', 'TWO']
+  - bytesize (optional, default: 'EIGHTBITS') one of['FIVEBITS', 'SIXBITS', 'SEVENBITS', 'EIGHTBITS']
+  - timeout (optional, default None, keep waiting forever)
+  - xonxoff (optional, default: False)
+  - rtscts (optional, default: False)
+  - dsrdtr (optional, default: False)
+  - write_timeout (optional, default: None)
+  - inter_byte_timeout (optional, default: None)
+- `servers`: dictionary describing the parameters needed to open the listening interfaces for external connections
+  - port: any valid port number
+  - address: listening address (optional, default: '0.0.0.0')
+  - protocol: on of ['TELNET', 'TCP']
+- `logger_config` (optional): define the logging options you need from the python logging module. Format and options can be found at: [handlers](https://docs.python.org/3/library/logging.handlers.html)
+
+### Configuration file example (no logging, global or port based)
 ```json
 [
     {
@@ -99,7 +119,7 @@ optional arguments:
 `serial` structure pass all parameters to [serial.Serial](https://pythonhosted.org/pyserial/pyserial_api.html#classes) constructor from pyserial library,
 this allow full control of the serial port
 
-## Configuration file example (port based logging)
+### Configuration file example (port based logging)
 ```json
 [
     {
@@ -162,10 +182,11 @@ this allow full control of the serial port
         }
     }
 ]
-
 ```
 
-## Configuration file example (global logging)
+**note**: the logger name defined in the "loggers" section needs to match the "serial" "port" name, otherwise the main program can't find the configuration when it tries to load it.
+
+### Configuration file example (global logging)
 
 ```json
 {
@@ -208,6 +229,8 @@ this allow full control of the serial port
     }
 }
 ```
+
+**note**: the logger name defined in the "loggers" section needs to be called `ser2tcp`, otherwise the main program can't find the configuration when it tries to load it.
 
 ## Usage examples
 For installed version:
