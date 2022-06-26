@@ -1,5 +1,11 @@
 """Connection Telnet"""
+from __future__ import annotations
 
+import logging as _logging
+from typing import Tuple
+
+import ser2tcp.connection as _connection
+import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.connection as _connection
 
 
@@ -31,15 +37,23 @@ class ConnectionTelnet(_connection.Connection):
         TELNET_DONT: 'DONT',
     }
 
-    def __init__(self, connection, ser, log=None):
-        super().__init__(connection, log)
+    def __init__(
+            self,
+            connection: Tuple[str, int],
+            ser: _serial_proxy.SerialProxy,
+            log_global: _logging.Logger,
+            log_serial: _logging.Logger
+        ):
+        super().__init__(connection, log_global, log_serial)
         self._serial = ser
         self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
         self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
         self._telnet_iac = False
         self._telnet_state = None
         self._subnegotiation_frame = None
-        self._log.info("Client connected: %s:%d TELNET", *self._addr)
+        ip, port = self._addr
+        self._log_global.info(f"Client connected: {ip}:{port} TELNET")
+        self._log_serial.info(f"Client connected: {ip}:{port} TELNET")
 
     def send(self, data):
         """Send data to client"""
@@ -47,15 +61,24 @@ class ConnectionTelnet(_connection.Connection):
 
     def _telnet_subnegotiation(self, subnegotiation):
         """Process subnegotiation frame"""
-        self._log.debug(
-            "(%s:%d) received TELNET SUBNEGOTIATION: %s",
-            *self._addr, ' '.join(['%02x' % i for i in subnegotiation]))
+        message = "({}:{}) received TELNET SUBNEGOTIATION: {}".format(
+            *self._addr,
+            ' '.join([f'{i:02x}' for i in subnegotiation])
+        )
+        self._log_global.debug(message)
+        self._log_serial.debug(message)
+        
 
     def _telnet_command(self, command, value):
         """Process telnet command"""
-        self._log.debug(
-            "(%s:%d) received TELNET COMMAND: %s 0x%02x",
-            *self._addr, self.TELNET_OPTION_CODES[command], value)
+        message = "({}:{}) received TELNET COMMAND: {} {:02x}".format(
+            *self._addr,
+            self.TELNET_OPTION_CODES[command],
+            value
+        )
+        self._log_global.debug(message)
+        self._log_serial.debug(message)
+
 
     def _send_data(self, data):
         if self._telnet_state is None:
@@ -76,9 +99,13 @@ class ConnectionTelnet(_connection.Connection):
         elif state == self.TELNET_IAC:
             self._send_data(bytes((state, )))
         else:
-            self._log.warning(
-                "(%s:%d) received unexpected TELNET COMMAND: 0x%02x",
-                *self._addr, state)
+            message = "({}:{}) received unexpected TELNET COMMAND: {:02x}".format(
+                *self._addr,
+                state
+            )
+            self._log_global.warning(message)
+            self._log_serial.warning(message)
+
 
     def on_received(self, data):
         """Received data from client"""

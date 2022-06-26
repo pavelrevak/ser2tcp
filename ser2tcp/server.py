@@ -1,42 +1,43 @@
 """Server"""
 
 # pylint: disable=C0209
+from __future__ import annotations
 
-import socket as _socket
 import logging as _logging
-import ser2tcp.connection_tcp as _connection_tcp
-import ser2tcp.connection_telnet as _connection_telnet
+import socket as _socket
 
-
-class ConfigError(Exception):
-    """Configuration error exception"""
+import ser2tcp.conf_models as _conf_models
+import ser2tcp.serial_proxy as _serial_proxy
 
 
 class Server():
     """Server connection manager"""
 
-    CONNECTIONS = {
-        'TCP': _connection_tcp.ConnectionTcp,
-        'TELNET': _connection_telnet.ConnectionTelnet,
-    }
-
-    def __init__(self, config, ser, log=None):
-        self._log = log if log else _logging.Logger(self.__class__.__name__)
+    def __init__(
+            self,
+            config: _conf_models.ServerInstance,
+            ser: _serial_proxy.SerialProxy,
+            log_global: _logging.Logger,
+            log_serial: _logging.Logger,
+        ):
+        self._log_global = log_global
+        self._log_serial = log_serial
         self._config = config
         self._serial = ser
         self._connections = []
-        self._protocol = self._config['protocol'].upper()
         self._socket = None
-        self._log.info(
-            "  Server: %s %d %s",
-            self._config['address'],
-            self._config['port'],
-            self._protocol)
-        if self._protocol not in self.CONNECTIONS:
-            raise ConfigError('Unknown protocol %s' % self._protocol)
+
+        message = "-> Starting server: {}:{} {}".format(
+            self._config.address,
+            self._config.port,
+            self._config.protocol,
+        )
+        self._log_global.info(message)
+        self._log_serial.info(message)
+
         self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
         self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        self._socket.bind((config['address'], config['port']))
+        self._socket.bind((self._config.address, self._config.port))
         self._socket.listen(1)
 
     def __del__(self):
@@ -47,21 +48,32 @@ class Server():
         sock, addr = self._socket.accept()
         if not self._connections:
             if not self._serial.connect():
-                self._log.info("Client canceled: %s:%d", *addr)
+                self._log_global.info(f"Client canceled: {addr[0]}:{addr[1]}")
+                self._log_serial.info(f"Client canceled: {addr[0]}:{addr[1]}")
                 sock.close()
                 return
-        connection = self.CONNECTIONS[self._protocol](
+
+        # create a TCP or TELNET connection
+        connection = self._config.protocol(
             connection=(sock, addr),
             ser=self._serial,
-            log=self._log,
+            log_global=self._log_global,
+            log_serial=self._log_serial,
         )
+
         if self._serial.connect():
             self._connections.append(connection)
+            self._log_global.info(f"Serial {self._serial._conf.serial.port}: Client added: {addr[0]}:{addr[1]}")
+            self._log_serial.info(f"Serial {self._serial._conf.serial.port}: Client added: {addr[0]}:{addr[1]}")
         else:
             connection.close()
+            self._log_global.info(f"Serial {self._serial._conf.serial.port}: Refusing Client (no serial port open): {addr[0]}:{addr[1]}")
+            self._log_serial.info(f"Serial {self._serial._conf.serial.port}: Refusing Client (no serial port open): {addr[0]}:{addr[1]}")
 
     def close_connections(self):
         """close all clients"""
+        self._log_global.info(f"Serial {self._serial._conf.serial.port}: Closing all server connections.")
+        self._log_serial.info(f"Serial {self._serial._conf.serial.port}: Closing all server connections.")
         while self._connections:
             self._connections.pop().close()
 
@@ -92,9 +104,12 @@ class Server():
                 data = b''
                 try:
                     data = con.socket().recv(4096)
-                    self._log.debug("(%s:%d): %s", *con.get_address(), data)
+                    ip, port = con.get_address()
+                    self._log_global.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data.decode('utf-8')}")
+                    self._log_serial.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data.decode('utf-8')}")
                 except ConnectionResetError as err:
-                    self._log.info("(%s:%d): %s", *con.get_address(), err)
+                    self._log_global.info(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {err}")
+                    self._log_serial.info(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {err}")
                 if not data:
                     con.close()
                     self._connections.remove(con)
