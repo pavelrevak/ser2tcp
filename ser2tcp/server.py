@@ -27,16 +27,13 @@ class Server():
         self._connections = []
         self._socket = None
 
-        self._log_global.info("-> Starting server: {} {} {}".format(
+        message = "-> Starting server: {}:{} {}".format(
             self._config.address,
             self._config.port,
             self._config.protocol,
-        ))
-        self._log_serial.info("-> Starting server: {} {} {}".format(
-            self._config.address,
-            self._config.port,
-            self._config.protocol,
-        ))
+        )
+        self._log_global.info(message)
+        self._log_serial.info(message)
 
         self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
         self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
@@ -108,8 +105,8 @@ class Server():
                 try:
                     data = con.socket().recv(4096)
                     ip, port = con.get_address()
-                    self._log_global.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data}")
-                    self._log_serial.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data}")
+                    self._log_global.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data.decode('utf-8')}")
+                    self._log_serial.debug(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {data.decode('utf-8')}")
                 except ConnectionResetError as err:
                     self._log_global.info(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {err}")
                     self._log_serial.info(f"Serial {self._serial._conf.serial.port}: ({ip}:{port}): {err}")

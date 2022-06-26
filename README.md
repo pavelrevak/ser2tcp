@@ -13,10 +13,12 @@ Simple proxy for connecting over TCP or telnet to serial port
 - servers accepts multiple connections at one time
     - each connected client can sent to serial port
     - serial port send received data to all connected clients
-- parsing of the json config files via pydantic
-- Flexible logging via the python logging module [configuration](https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)
-    - either on a per port serial config
+- parsing of the json config files at startup of the program (via pydantic)
+- flexible logging via the python logging module [configuration](https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)
+    - on a per port serial config
     - or a global configuration
+
+**note** SysLogHandler: If you want to use this logger type, either specify a global config and no logging on a per port basis or on a per port basis only. For unknow reasons the logging library throws a "ser2tcp.connection_tcp.ConnectionTcp" error when 2 SysLogHandlers are specified in the 2 configs.
 
 ## Instalation
 ```

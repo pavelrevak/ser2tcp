@@ -1,5 +1,6 @@
 import serial as _serial
 import logging as _logging
+from logging import config as _logging_config
 from typing import Literal, Optional, List
 from pydantic import BaseModel, validator
 
@@ -78,7 +79,7 @@ class SerialMappingInstance(BaseModel):
 
     def create_loggers(self):
         if self.logger_config:
-            _logging.config.dictConfig(self.logger_config)
+            _logging_config.dictConfig(self.logger_config)
             self.logger = _logging.getLogger(self.serial.port)
         else:
             # create a disabled logger 

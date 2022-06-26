@@ -5,6 +5,7 @@ Simple proxy for connecting over TCP or telnet to serial port
 import sys as _sys
 import json as _json
 import logging as _logging
+from logging import config as _logging_config
 import argparse as _argparse
 import signal as _signal
 
@@ -54,8 +55,9 @@ def main():
         with open(args.global_log_config) as f:
             cfg = _json.load(f)
         
-        _logging.config.dictConfig(cfg)
+        _logging_config.dictConfig(cfg)
         log = _logging.getLogger('ser2tcp')
+        log.debug(f"global log config:\n{cfg}")
     elif args.no_logger:
         log.disabled = True
 
@@ -64,6 +66,8 @@ def main():
         path=args.config,
         encoding='utf-8',
     )
+
+    log.info(f"Starting ser2tcp with configuration:\n{serial_configuration}")
 
     servers_manager = _server_manager.ServersManager(log, serial_configuration)
     
