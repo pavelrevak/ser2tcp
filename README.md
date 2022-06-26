@@ -13,6 +13,10 @@ Simple proxy for connecting over TCP or telnet to serial port
 - servers accepts multiple connections at one time
     - each connected client can sent to serial port
     - serial port send received data to all connected clients
+- parsing of the json config files via pydantic
+- logging via off the shelf python logging json [configuration](https://docs.python.org/3/library/logging.config.html#configuration-dictionary-schema)
+    - either on a per port serial config
+    - or a global configuration
 
 ## Instalation
 ```
@@ -26,11 +30,20 @@ pip3 uninstall ser2tcp
 
 ## command line options
 ```
+$ ser2tcp -h
+usage: ser2tcp [-h] [-V] [-v] [-d] -c CONFIG [-g GLOBAL_LOG_CONFIG]
+
+ser2tcp v3.0 (c) 2016-2021 by pavel.revak@gmail.com https://github.com/pavelrevak/ser2tcp
+
+optional arguments:
   -h, --help            show this help message and exit
   -V, --version         show program's version number and exit
-  -v, --verbose         Increase verbosity
+  -v, --verbose         Increase verbosity: warning (default), info (-v), debug (-vv)
+  -d, --no_logger       Disable the default logger to stdout
   -c CONFIG, --config CONFIG
-                        configuration in json format
+                        configuration in JSON format
+  -g GLOBAL_LOG_CONFIG, --global_log_config GLOBAL_LOG_CONFIG
+                        global logging configuration in JSON format
 ```
 
 ### Verbose
@@ -38,7 +51,7 @@ pip3 uninstall ser2tcp
 - `-v`: will print INFO messages
 - `-vv`: print also DEBUG messages
 
-## Configuration file example
+## Configuration file example (no logging, global or port based)
 ```json
 [
     {
@@ -86,6 +99,116 @@ pip3 uninstall ser2tcp
 `serial` structure pass all parameters to [serial.Serial](https://pythonhosted.org/pyserial/pyserial_api.html#classes) constructor from pyserial library,
 this allow full control of the serial port
 
+## Configuration file example (port based logging)
+```json
+[
+    {
+        "serial": {
+            "port": "/dev/ttyUSB0",
+            "baudrate": 115200,
+            "parity": "NONE",
+            "stopbits": "ONE"
+        },
+        "servers": [
+            {
+                "address": "0.0.0.0",
+                "port": 10001,
+                "protocol": "TCP"
+            },
+            {
+                "address": "0.0.0.0",
+                "port": 10002,
+                "protocol": "TELNET"
+            }
+        ],
+        "logger_config": {
+            "version": 1,
+            "disable_existing_loggers": false,
+            "formatters": {
+                "log_format": {
+                    "format": "MC [ %(asctime)s ] %(levelname).1s: %(message)s (%(filename)s:%(lineno)s)"
+                }
+            },
+
+            "handlers": {
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "level": "DEBUG",
+                    "formatter": "log_format",
+                    "stream": "ext://sys.stdout"
+                },
+
+                "file_handler": {
+                    "class": "logging.FileHandler",
+                    "level": "DEBUG",
+                    "formatter": "log_format",
+                    "filename": "serial.log"
+                },
+
+                "syslog_handler": {
+                    "class": "logging.handlers.SysLogHandler",
+                    "level": "DEBUG",
+                    "formatter": "log_format",
+                    "address": ["localhost", 514]
+                }
+            },
+
+            "loggers": {
+                "/dev/ttyUSB0": {
+                    "level": "DEBUG",
+                    "handlers": ["console", "file_handler", "syslog_handler"]
+                }
+            }
+        }
+    }
+]
+
+```
+
+## Configuration file example (global logging)
+
+```json
+{
+    "version": 1,
+    "disable_existing_loggers": false,
+    "formatters": {
+        "log_format": {
+            "format": "GC [ %(asctime)s ] %(levelname).1s: %(message)s (%(filename)s:%(lineno)s)"
+        }
+    },
+
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "level": "DEBUG",
+            "formatter": "log_format",
+            "stream": "ext://sys.stdout"
+        },
+
+        "file_handler": {
+            "class": "logging.FileHandler",
+            "level": "DEBUG",
+            "formatter": "log_format",
+            "filename": "global.log"
+        },
+
+        "syslog_handler": {
+            "class": "logging.handlers.SysLogHandler",
+            "level": "DEBUG",
+            "formatter": "log_format",
+            "address": ["localhost", 514]
+        }
+    },
+
+    "loggers": {
+        "ser2tcp": {
+            "level": "DEBUG",
+            "handlers": ["console", "file_handler", "syslog_handler"]
+        }
+    }
+}
+```
+
 ## Usage examples
 For installed version:
 ```
@@ -94,6 +217,12 @@ ser2tcp -c ser2tcp.conf
 Direct running from repository:
 ```
 python3 run.py -c ser2tcp.conf
+```
+Running with a global config:
+
+**note**: make sure the -c config does not contain logging configuration.
+```
+ser2tcp -c ser2tcp.conf -g global_logging.conf
 ```
 
 ### Connecting using telnet
