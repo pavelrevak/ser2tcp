@@ -1,14 +1,14 @@
-"""Connection Telnet"""
+"""Connection Unix"""
 
 import ser2tcp.connection as _connection
 
 
-class ConnectionTcp(_connection.Connection):
-    """TCP connection"""
+class ConnectionUnix(_connection.Connection):
+    """Unix connection"""
     def __init__(self, connection, ser, log=None):
         super().__init__(connection, log)
         self._serial = ser
-        self._log.info("Client connected: %s:%d TCP", *self._addr)
+        self._log.info("Client connected: %s:%d UNIX", *self._addr)
 
     @staticmethod
     def list_pull_first(data):

@@ -14,17 +14,8 @@
             },
             {
                 "address": "0.0.0.0",
-                "port": 10003,
-                "protocol": "TCP"
-            },
-            {
-                "address": "0.0.0.0",
                 "port": 10002,
                 "protocol": "TELNET"
-            },
-            {
-                "address": "/tmp/test.sock",
-                "protocol": "UNIX"
             }
         ]
     }

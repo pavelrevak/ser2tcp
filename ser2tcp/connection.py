@@ -33,4 +33,5 @@ class Connection():
 
     def send(self, data):
         """Send data to client"""
+        print(data)
         self._socket.sendall(data)

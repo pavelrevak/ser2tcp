@@ -6,6 +6,7 @@ import socket as _socket
 import logging as _logging
 import ser2tcp.connection_tcp as _connection_tcp
 import ser2tcp.connection_telnet as _connection_telnet
+import ser2tcp.connection_unix as _connection_unix
 
 
 class ConfigError(Exception):
@@ -18,6 +19,7 @@ class Server():
     CONNECTIONS = {
         'TCP': _connection_tcp.ConnectionTcp,
         'TELNET': _connection_telnet.ConnectionTelnet,
+        'UNIX': _connection_unix.ConnectionUnix,
     }
 
     def __init__(self, config, ser, log=None):
@@ -27,16 +29,27 @@ class Server():
         self._connections = []
         self._protocol = self._config['protocol'].upper()
         self._socket = None
-        self._log.info(
-            "  Server: %s %d %s",
-            self._config['address'],
-            self._config['port'],
-            self._protocol)
+        if self._protocol == "UNIX":
+            self._log.info(
+                "  Server: %s %s",
+                self._config['address'],
+                self._protocol)
+        else:
+            self._log.info(
+                "  Server: %s %d %s",
+                self._config['address'],
+                self._config['port'],
+                self._protocol)
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
-        self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
-        self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        self._socket.bind((config['address'], config['port']))
+        if self._protocol == "UNIX":
+            self._socket = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+            self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            self._socket.bind(self._config['address'])
+        else:
+            self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
+            self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            self._socket.bind((config['address'], config['port']))
         self._socket.listen(1)
 
     def __del__(self):
