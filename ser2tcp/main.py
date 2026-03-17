@@ -2,7 +2,6 @@
 Simple proxy for connecting over TCP or telnet to serial port
 """
 
-import sys as _sys
 import argparse as _argparse
 import logging as _logging
 import signal as _signal
@@ -19,15 +18,8 @@ https://github.com/pavelrevak/ser2tcp
 """
 
 
-def sigterm_handler(_signo, _stack_frame):
-    """Raises SystemExit(0)"""
-    _sys.exit(0)
-
-
 def main():
     """Main"""
-    _signal.signal(_signal.SIGTERM, sigterm_handler)
-    _signal.signal(_signal.SIGINT, sigterm_handler)
     parser = _argparse.ArgumentParser(description=DESCRIPTION_STR)
     parser.add_argument('-V', '--version', action='version', version=VERSION_STR)
     parser.add_argument(
@@ -49,7 +41,9 @@ def main():
     servers_manager = _server_manager.ServersManager()
     for config in configuration:
         servers_manager.add_server(_serial_proxy.SerialProxy(config, log))
-    while True:
-        servers_manager.process()
+
+    _signal.signal(_signal.SIGTERM, servers_manager.stop)
+    _signal.signal(_signal.SIGINT, servers_manager.stop)
+
+    servers_manager.run()
     log.info("Exiting..")
-    servers_manager.close()

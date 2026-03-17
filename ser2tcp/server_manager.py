@@ -7,6 +7,18 @@ class ServersManager():
     """Servers manager"""
     def __init__(self):
         self._servers = []
+        self._running = False
+
+    def stop(self, _signo=None, _stack_frame=None):
+        """Stop the server manager loop"""
+        self._running = False
+
+    def run(self):
+        """Run the server manager loop"""
+        self._running = True
+        while self._running:
+            self.process()
+        self.close()
 
     def add_server(self, server):
         """Add server"""
