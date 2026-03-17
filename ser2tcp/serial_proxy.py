@@ -48,8 +48,8 @@ class SerialProxy():
             for key, val in self.STOPBITS_CONFIG.items():
                 if config['stopbits'] == key:
                     config['stopbits'] = val
-        if 'bygesize' in config:
-            for key, val in self.STOPBITS_CONFIG.items():
+        if 'bytesize' in config:
+            for key, val in self.BYTESIZE_CONFIG.items():
                 if config['bytesize'] == key:
                     config['bytesize'] = val
         return config
