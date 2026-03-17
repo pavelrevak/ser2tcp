@@ -3,17 +3,23 @@ Simple proxy for connecting over TCP or telnet to serial port
 """
 
 import argparse as _argparse
+import importlib.metadata as _metadata
+import json as _json
 import logging as _logging
 import signal as _signal
-import json as _json
+
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server_manager as _server_manager
 
-
-VERSION_STR = "ser2tcp v3.0"
+try:
+    _about = _metadata.metadata("ser2tcp")
+    VERSION_STR = "%s %s (%s)" % (
+        _about["Name"], _about["Version"], _about["Author-email"])
+except _metadata.PackageNotFoundError:
+    VERSION_STR = "ser2tcp (not installed)"
 
 DESCRIPTION_STR = VERSION_STR + """
-(c) 2016-2021 by pavel.revak@gmail.com
+(c) 2016-2026 by pavel.revak@gmail.com
 https://github.com/pavelrevak/ser2tcp
 """
 
