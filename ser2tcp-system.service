@@ -1,0 +1,12 @@
+[Unit]
+Description=Ser2tcp server
+After=network.target
+
+[Service]
+Type=simple
+User=ser2tcp
+Group=ser2tcp
+ExecStart=/usr/local/bin/ser2tcp -v -c /etc/ser2tcp.conf
+
+[Install]
+WantedBy=multi-user.target
