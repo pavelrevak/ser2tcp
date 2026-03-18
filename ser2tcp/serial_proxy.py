@@ -90,13 +90,20 @@ class SerialProxy():
             self._servers.pop().close()
         self.disconnect()
 
-    def sockets(self):
-        """Return all sockets from this server"""
+    def read_sockets(self):
+        """Return all sockets for reading"""
         sockets = []
         for server in self._servers:
-            sockets += server.sockets()
+            sockets += server.read_sockets()
         if self._serial:
             sockets.append(self._serial)
+        return sockets
+
+    def write_sockets(self):
+        """Return all sockets for writing (with pending data)"""
+        sockets = []
+        for server in self._servers:
+            sockets += server.write_sockets()
         return sockets
 
     def send_to_connections(self, data):
@@ -104,10 +111,10 @@ class SerialProxy():
         for server in self._servers:
             server.send(data)
 
-    def socket_event(self, read_sockets):
+    def process_read(self, read_sockets):
         """Process sockets with read event"""
         for server in self._servers:
-            server.socket_event(read_sockets)
+            server.process_read(read_sockets)
         if self._serial and self._serial in read_sockets:
             try:
                 data = self._serial.read(size=self._serial.in_waiting)
@@ -118,7 +125,16 @@ class SerialProxy():
                 for server in self._servers:
                     server.close_connections()
                 self.disconnect()
-                return
+
+    def process_write(self, write_sockets):
+        """Process sockets with write event"""
+        for server in self._servers:
+            server.process_write(write_sockets)
+
+    def process_stale(self):
+        """Remove stale connections"""
+        for server in self._servers:
+            server.process_stale()
 
     def send(self, data):
         """Send data to serial port"""

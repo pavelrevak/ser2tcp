@@ -1,4 +1,12 @@
-*.egg-info
 __pycache__
-*.pyc
-ser2tcp/_version.py
+build
+dist
+.*
+!.gitignore
+!.github
+!.mpyproject
+*.egg-info
+_version.py
+*.md
+!README*.md
+scripts/

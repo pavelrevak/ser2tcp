@@ -26,6 +26,8 @@ class Server():
         self._serial = ser
         self._connections = []
         self._protocol = self._config['protocol'].upper()
+        self._send_timeout = self._config.get('send_timeout')
+        self._buffer_limit = self._config.get('buffer_limit')
         self._socket = None
         self._log.info(
             "  Server: %s %d %s",
@@ -34,7 +36,8 @@ class Server():
             self._protocol)
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
-        self._socket = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
+        self._socket = _socket.socket(
+            _socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
         self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
         self._socket.bind((config['address'], config['port']))
         self._socket.listen(1)
@@ -53,6 +56,8 @@ class Server():
         connection = self.CONNECTIONS[self._protocol](
             connection=(sock, addr),
             ser=self._serial,
+            send_timeout=self._send_timeout,
+            buffer_limit=self._buffer_limit,
             log=self._log,
         )
         if self._serial.connect():
@@ -76,18 +81,33 @@ class Server():
         """True if server has some connections"""
         return bool(self._connections)
 
-    def sockets(self):
-        """Return socket from this server and all connected clients sockets"""
+    def read_sockets(self):
+        """Return sockets for reading (server + all clients)"""
         sockets = [self._socket]
         for con in self._connections:
             sockets.append(con.socket())
         return sockets
 
-    def socket_event(self, read_sockets):
+    def write_sockets(self):
+        """Return sockets for writing (clients with pending data)"""
+        sockets = []
+        for con in self._connections:
+            if con.has_pending_data():
+                sockets.append(con.socket())
+        return sockets
+
+    def _remove_connection(self, con):
+        """Remove connection and disconnect serial if no connections left"""
+        con.close()
+        self._connections.remove(con)
+        if not self._connections:
+            self._serial.disconnect()
+
+    def process_read(self, read_sockets):
         """Process sockets with read event"""
         if self._socket in read_sockets:
             self._client_connect()
-        for con in self._connections:
+        for con in list(self._connections):
             if con.socket() in read_sockets:
                 data = b''
                 try:
@@ -96,12 +116,27 @@ class Server():
                 except ConnectionResetError as err:
                     self._log.info("(%s:%d): %s", *con.get_address(), err)
                 if not data:
-                    con.close()
-                    self._connections.remove(con)
-                    if not self._connections:
-                        self._serial.disconnect()
-                    return
+                    self._remove_connection(con)
+                    continue
                 con.on_received(data)
+
+    def process_write(self, write_sockets):
+        """Process sockets with write event, flush buffers"""
+        for con in list(self._connections):
+            if con.socket() in write_sockets:
+                result = con.flush()
+                if result is None:
+                    self._log.info(
+                        "(%s:%d): write error", *con.get_address())
+                    self._remove_connection(con)
+
+    def process_stale(self):
+        """Remove stale connections (send timeout expired)"""
+        for con in list(self._connections):
+            if con.is_stale():
+                self._log.info(
+                    "(%s:%d): send timeout", *con.get_address())
+                self._remove_connection(con)
 
     def send(self, data):
         """Send data to connection"""

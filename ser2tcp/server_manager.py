@@ -26,13 +26,19 @@ class ServersManager():
 
     def process(self):
         """Process all servers"""
-        sockets = []
+        read_list = []
+        write_list = []
         for server in self._servers:
-            sockets.extend(server.sockets())
-        read_sockets = _select.select(sockets, [], [], .1)[0]
-        if read_sockets:
-            for server in self._servers:
-                server.socket_event(read_sockets)
+            read_list.extend(server.read_sockets())
+            write_list.extend(server.write_sockets())
+        ready = _select.select(read_list, write_list, [], .1)
+        read_sockets, write_sockets = ready[0], ready[1]
+        for server in self._servers:
+            if read_sockets:
+                server.process_read(read_sockets)
+            if write_sockets:
+                server.process_write(write_sockets)
+            server.process_stale()
 
     def close(self):
         """Close all servers"""

@@ -31,19 +31,22 @@ class ConnectionTelnet(_connection.Connection):
         TELNET_DONT: 'DONT',
     }
 
-    def __init__(self, connection, ser, log=None):
-        super().__init__(connection, log)
+    def __init__(
+            self, connection, ser, send_timeout=None, buffer_limit=None,
+            log=None):
+        super().__init__(connection, send_timeout, buffer_limit, log)
         self._serial = ser
-        self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
-        self._socket.sendall(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
+        # Send initial telnet negotiation
+        self.send(bytes((self.TELNET_IAC, self.TELNET_DO, 0x22)))
+        self.send(bytes((self.TELNET_IAC, self.TELNET_WILL, 0x01)))
         self._telnet_iac = False
         self._telnet_state = None
         self._subnegotiation_frame = None
         self._log.info("Client connected: %s:%d TELNET", *self._addr)
 
     def send(self, data):
-        """Send data to client"""
-        super().send(data.replace(b'\xff', b'\xff\xff'))
+        """Send data to client, escape IAC bytes"""
+        return super().send(data.replace(b'\xff', b'\xff\xff'))
 
     def _telnet_subnegotiation(self, subnegotiation):
         """Process subnegotiation frame"""
