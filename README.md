@@ -40,6 +40,7 @@ pip uninstall ser2tcp
   -h, --help            show this help message and exit
   -V, --version         show program's version number and exit
   -v, --verbose         Increase verbosity
+  -u, --usb             List USB serial devices and exit
   -c CONFIG, --config CONFIG
                         configuration in JSON format
 ```
@@ -82,6 +83,43 @@ pip uninstall ser2tcp
 ### Serial configuration
 
 `serial` structure pass all parameters to [serial.Serial](https://pythonhosted.org/pyserial/pyserial_api.html#classes) constructor from pyserial library, this allows full control of the serial port.
+
+#### USB device matching
+
+Instead of specifying `port` directly, you can use `match` to find device by USB attributes:
+
+```json
+{
+    "serial": {
+        "match": {
+            "vid": "0x303A",
+            "pid": "0x4001",
+            "serial_number": "dcda0c2004bc0000"
+        },
+        "baudrate": 115200
+    }
+}
+```
+
+Use `ser2tcp --usb` to list available USB devices with their attributes:
+
+```
+$ ser2tcp --usb
+/dev/cu.usbmodem1101
+  vid: 0x303A
+  pid: 0x4001
+  serial_number: dcda0c2004bc0000
+  manufacturer: Espressif Systems
+  product: Espressif Device
+  location: 1-1
+```
+
+Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `location`
+
+- Wildcard `*` supported (e.g. `"product": "CP210*"`)
+- Matching is case-insensitive
+- Error if multiple devices match the criteria
+- `baudrate` is optional (default 9600, CDC devices ignore it)
 
 ### Server configuration
 

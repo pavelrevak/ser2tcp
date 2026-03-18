@@ -1,7 +1,11 @@
-"""Server"""
+"""Serial proxy - serial port management and USB device matching"""
 
+import fnmatch as _fnmatch
 import logging as _logging
+
 import serial as _serial
+import serial.tools.list_ports as _list_ports
+
 import ser2tcp.server as _server
 
 
@@ -25,21 +29,29 @@ class SerialProxy():
         'SEVENBITS': _serial.SEVENBITS,
         'EIGHTBITS': _serial.EIGHTBITS,
     }
+    MATCH_ATTRIBUTES = ('vid', 'pid', 'serial_number', 'manufacturer',
+        'product', 'location')
 
     def __init__(self, config, log=None):
         self._log = log if log else _logging.Logger(self.__class__.__name__)
         self._serial = None
         self._servers = []
         self._serial_config = self.fix_serial_config(config['serial'])
-        self._log.info(
-            "Serial: %s %d",
-            self._serial_config['port'],
-            self._serial_config['baudrate'])
+        baudrate = self._serial_config.get('baudrate')
+        if baudrate:
+            self._log.info(
+                "Serial: %s %d", self._serial_config['port'], baudrate)
+        else:
+            self._log.info("Serial: %s", self._serial_config['port'])
         for server_config in config['servers']:
             self._servers.append(_server.Server(server_config, self, log))
 
     def fix_serial_config(self, config):
-        """Fix serial configuration"""
+        """Fix serial configuration - resolve match, convert enum values"""
+        if 'port' not in config:
+            if 'match' not in config:
+                raise ValueError("Serial config must have 'port' or 'match'")
+            config['port'] = self.find_port_by_match(config.pop('match'))
         if 'parity' in config:
             for key, val in self.PARITY_CONFIG.items():
                 if config['parity'] == key:
@@ -53,6 +65,40 @@ class SerialProxy():
                 if config['bytesize'] == key:
                     config['bytesize'] = val
         return config
+
+    def find_port_by_match(self, match):
+        """Find serial port by matching USB device attributes"""
+        if not match:
+            raise ValueError("Match criteria cannot be empty")
+        for key in match:
+            if key not in self.MATCH_ATTRIBUTES:
+                raise ValueError(f"Unknown match attribute: {key}")
+        matched_ports = []
+        for port_info in _list_ports.comports():
+            if self._port_matches(port_info, match):
+                matched_ports.append(port_info.device)
+        if not matched_ports:
+            raise ValueError(f"No device found matching: {match}")
+        if len(matched_ports) > 1:
+            raise ValueError(
+                f"Multiple devices match {match}: {matched_ports}")
+        return matched_ports[0]
+
+    def _port_matches(self, port_info, match):
+        """Check if port_info matches all criteria"""
+        for attr, pattern in match.items():
+            value = getattr(port_info, attr, None)
+            if value is None:
+                return False
+            # Convert vid/pid to hex string for comparison
+            if attr in ('vid', 'pid') and isinstance(value, int):
+                value = f"0x{value:04X}"
+            else:
+                value = str(value)
+            # Case-insensitive wildcard matching
+            if not _fnmatch.fnmatch(value.upper(), str(pattern).upper()):
+                return False
+        return True
 
     def __del__(self):
         self.close()

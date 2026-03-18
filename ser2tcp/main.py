@@ -8,6 +8,8 @@ import json as _json
 import logging as _logging
 import signal as _signal
 
+import serial.tools.list_ports as _list_ports
+
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server_manager as _server_manager
 
@@ -24,6 +26,30 @@ https://github.com/pavelrevak/ser2tcp
 """
 
 
+def list_usb_devices():
+    """List USB serial devices with match attributes"""
+    devices = []
+    for port in _list_ports.comports():
+        if port.vid is not None:
+            devices.append(port)
+    if not devices:
+        print("No USB serial devices found")
+        return
+    for port in devices:
+        print(f"{port.device}")
+        print(f"  vid: 0x{port.vid:04X}")
+        print(f"  pid: 0x{port.pid:04X}")
+        if port.serial_number:
+            print(f"  serial_number: {port.serial_number}")
+        if port.manufacturer:
+            print(f"  manufacturer: {port.manufacturer}")
+        if port.product:
+            print(f"  product: {port.product}")
+        if port.location:
+            print(f"  location: {port.location}")
+        print()
+
+
 def main():
     """Main"""
     parser = _argparse.ArgumentParser(description=DESCRIPTION_STR)
@@ -32,9 +58,19 @@ def main():
         '-v', '--verbose', action='count', default=0,
         help="Increase verbosity")
     parser.add_argument(
-        '-c', '--config', required=True,
+        '-u', '--usb', action='store_true',
+        help="List USB serial devices and exit")
+    parser.add_argument(
+        '-c', '--config',
         help="configuration in JSON format")
     args = parser.parse_args()
+
+    if args.usb:
+        list_usb_devices()
+        return
+
+    if not args.config:
+        parser.error("--config is required")
 
     _logging.basicConfig(format='%(levelname).1s: %(message)s (%(filename)s:%(lineno)s)')
     log = _logging.getLogger('ser2tcp')
