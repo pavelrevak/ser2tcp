@@ -24,7 +24,7 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pavelrevak/ser2tcp"
+Homepage = "https://github.com/cortexm/ser2tcp"
 
 [project.scripts]
 ser2tcp = "ser2tcp.main:main"

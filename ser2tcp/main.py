@@ -22,7 +22,7 @@ except _metadata.PackageNotFoundError:
 
 DESCRIPTION_STR = VERSION_STR + """
 (c) 2016-2026 by pavel.revak@gmail.com
-https://github.com/pavelrevak/ser2tcp
+https://github.com/cortexm/ser2tcp
 """
 
 

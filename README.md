@@ -2,7 +2,7 @@
 
 Simple proxy for connecting over TCP or telnet to serial port
 
-https://github.com/pavelrevak/ser2tcp
+https://github.com/cortexm/ser2tcp
 
 ## Features
 
