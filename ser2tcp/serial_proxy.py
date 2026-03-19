@@ -2,6 +2,8 @@
 
 import fnmatch as _fnmatch
 import logging as _logging
+import socket as _socket
+import threading as _threading
 
 import serial as _serial
 import serial.tools.list_ports as _list_ports
@@ -35,6 +37,10 @@ class SerialProxy():
     def __init__(self, config, log=None):
         self._log = log if log else _logging.Logger(self.__class__.__name__)
         self._serial = None
+        self._reader_thread = None
+        self._reader_sock_r = None
+        self._reader_sock_w = None
+        self._reader_running = False
         self._servers = []
         self._serial_config = self._init_serial_config(config['serial'])
         self._match = self._serial_config.pop('match', None)
@@ -103,6 +109,44 @@ class SerialProxy():
     def __del__(self):
         self.close()
 
+    def _start_reader_thread_if_needed(self):
+        """Start reader thread if serial port doesn't support fileno()"""
+        try:
+            self._serial.fileno()
+        except OSError:
+            self._start_reader_thread()
+
+    def _serial_reader_run(self):
+        """Reader thread: read from serial, forward to socketpair"""
+        while self._reader_running:
+            try:
+                data = self._serial.read(size=max(1, self._serial.in_waiting))
+                if data:
+                    self._reader_sock_w.sendall(data)
+            except (OSError, _serial.SerialException):
+                break
+
+    def _start_reader_thread(self):
+        """Start reader thread with socketpair for select() compatibility"""
+        self._reader_sock_r, self._reader_sock_w = _socket.socketpair()
+        self._reader_running = True
+        self._reader_thread = _threading.Thread(
+            target=self._serial_reader_run, daemon=True)
+        self._reader_thread.start()
+        self._log.debug("Serial reader thread started")
+
+    def _stop_reader_thread(self):
+        """Stop reader thread and close socketpair"""
+        if self._reader_thread is None:
+            return
+        self._reader_running = False
+        self._reader_thread.join(timeout=2)
+        self._reader_sock_r.close()
+        self._reader_sock_w.close()
+        self._reader_thread = None
+        self._reader_sock_r = None
+        self._reader_sock_w = None
+
     def connect(self):
         """Connect to serial port"""
         if not self._serial:
@@ -120,6 +164,7 @@ class SerialProxy():
                 return False
             self._log.info(
                 "Serial %s connected", self._serial_config['port'])
+            self._start_reader_thread_if_needed()
         return True
 
     def has_connections(self):
@@ -132,6 +177,7 @@ class SerialProxy():
     def disconnect(self):
         """Disconnect serial port, but if there are no active connections"""
         if self._serial and not self.has_connections():
+            self._stop_reader_thread()
             self._serial.close()
             self._serial = None
             self._log.info(
@@ -149,7 +195,10 @@ class SerialProxy():
         for server in self._servers:
             sockets += server.read_sockets()
         if self._serial:
-            sockets.append(self._serial)
+            if self._reader_sock_r:
+                sockets.append(self._reader_sock_r)
+            else:
+                sockets.append(self._serial)
         return sockets
 
     def write_sockets(self):
@@ -164,20 +213,31 @@ class SerialProxy():
         for server in self._servers:
             server.send(data)
 
+    def _process_serial_data(self):
+        """Read and forward serial data to connections"""
+        try:
+            if self._reader_sock_r:
+                data = self._reader_sock_r.recv(4096)
+            else:
+                data = self._serial.read(size=self._serial.in_waiting)
+            if data:
+                self._log.debug("(%s): %s", self._serial_config['port'], data)
+                self.send_to_connections(data)
+            else:
+                raise OSError("Serial reader closed")
+        except (OSError, _serial.SerialException) as err:
+            self._log.warning(err)
+            for server in self._servers:
+                server.close_connections()
+            self.disconnect()
+
     def process_read(self, read_sockets):
         """Process sockets with read event"""
         for server in self._servers:
             server.process_read(read_sockets)
-        if self._serial and self._serial in read_sockets:
-            try:
-                data = self._serial.read(size=self._serial.in_waiting)
-                self._log.debug("(%s): %s", self._serial_config['port'], data)
-                self.send_to_connections(data)
-            except (OSError, _serial.SerialException) as err:
-                self._log.warning(err)
-                for server in self._servers:
-                    server.close_connections()
-                self.disconnect()
+        serial_sock = self._reader_sock_r or self._serial
+        if self._serial and serial_sock in read_sockets:
+            self._process_serial_data()
 
     def process_write(self, write_sockets):
         """Process sockets with write event"""

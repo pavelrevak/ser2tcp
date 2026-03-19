@@ -12,6 +12,10 @@ def _mock_init(self, config=None, log=None):
     """Mock init that sets required attributes for __del__"""
     self._servers = []
     self._serial = None
+    self._reader_thread = None
+    self._reader_sock_r = None
+    self._reader_sock_w = None
+    self._reader_running = False
 
 
 def _make_port_info(device, vid=None, pid=None, serial_number=None,
@@ -221,6 +225,84 @@ class TestInitSerialConfigMatch(unittest.TestCase):
         result = proxy._init_serial_config(config)
         self.assertIn('match', result)
         self.assertEqual(result['match'], {'vid': '0x303A'})
+
+
+class TestSerialReaderThread(unittest.TestCase):
+    """Test reader thread for platforms without fileno() support"""
+
+    def _make_proxy(self):
+        proxy = SerialProxy.__new__(SerialProxy)
+        _mock_init(proxy)
+        proxy._log = MagicMock()
+        proxy._serial_config = {'port': '/dev/ttyUSB0'}
+        return proxy
+
+    def test_fileno_supported_no_thread(self):
+        """No reader thread when fileno() works"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.fileno.return_value = 3
+        proxy._start_reader_thread_if_needed()
+        self.assertIsNone(proxy._reader_thread)
+
+    def test_fileno_not_supported_starts_thread(self):
+        """Reader thread started when fileno() raises OSError"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.in_waiting = 0
+        proxy._serial.fileno.side_effect = OSError("fileno")
+        proxy._serial.read.side_effect = OSError("closed")
+        proxy._start_reader_thread_if_needed()
+        self.assertIsNotNone(proxy._reader_thread)
+        proxy._stop_reader_thread()
+
+    def test_start_stop_reader_thread(self):
+        """Reader thread starts and stops cleanly"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.in_waiting = 0
+        proxy._serial.read.side_effect = OSError("closed")
+        proxy._start_reader_thread()
+        self.assertIsNotNone(proxy._reader_thread)
+        self.assertIsNotNone(proxy._reader_sock_r)
+        self.assertIsNotNone(proxy._reader_sock_w)
+        self.assertTrue(proxy._reader_running)
+        proxy._stop_reader_thread()
+        self.assertIsNone(proxy._reader_thread)
+        self.assertIsNone(proxy._reader_sock_r)
+        self.assertIsNone(proxy._reader_sock_w)
+        self.assertFalse(proxy._reader_running)
+
+    def test_reader_thread_forwards_data(self):
+        """Reader thread forwards serial data through socketpair"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.in_waiting = 5
+        proxy._serial.read.side_effect = [b'hello', OSError("closed")]
+        proxy._start_reader_thread()
+        proxy._reader_thread.join(timeout=2)
+        data = proxy._reader_sock_r.recv(4096)
+        self.assertEqual(data, b'hello')
+        proxy._stop_reader_thread()
+
+    def test_read_sockets_uses_socketpair(self):
+        """read_sockets() returns socketpair when reader thread is active"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.in_waiting = 0
+        proxy._serial.read.side_effect = OSError("closed")
+        proxy._start_reader_thread()
+        sockets = proxy.read_sockets()
+        self.assertIn(proxy._reader_sock_r, sockets)
+        self.assertNotIn(proxy._serial, sockets)
+        proxy._stop_reader_thread()
+
+    def test_read_sockets_uses_serial_directly(self):
+        """read_sockets() returns serial when no reader thread"""
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        sockets = proxy.read_sockets()
+        self.assertIn(proxy._serial, sockets)
 
 
 if __name__ == "__main__":
