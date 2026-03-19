@@ -3,9 +3,11 @@
 # pylint: disable=C0209
 
 import logging as _logging
+import os as _os
 import socket as _socket
 import ssl as _ssl
 
+import ser2tcp.connection_socket as _connection_socket
 import ser2tcp.connection_ssl as _connection_ssl
 import ser2tcp.connection_tcp as _connection_tcp
 import ser2tcp.connection_telnet as _connection_telnet
@@ -22,6 +24,7 @@ class Server():
         'TCP': _connection_tcp.ConnectionTcp,
         'TELNET': _connection_telnet.ConnectionTelnet,
         'SSL': _connection_ssl.ConnectionSsl,
+        'SOCKET': _connection_socket.ConnectionSocket,
     }
 
     def __init__(self, config, ser, log=None):
@@ -34,19 +37,32 @@ class Server():
         self._buffer_limit = self._config.get('buffer_limit')
         self._ssl_context = None
         self._socket = None
-        self._log.info(
-            "  Server: %s %d %s",
-            self._config['address'],
-            self._config['port'],
-            self._protocol)
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
-        if self._protocol == 'SSL':
-            self._ssl_context = self._create_ssl_context()
-        self._socket = _socket.socket(
-            _socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
-        self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
-        self._socket.bind((config['address'], config['port']))
+        if self._protocol == 'SOCKET':
+            self._log.info(
+                "  Server: %s %s",
+                self._config['address'],
+                self._protocol)
+            self._socket = _socket.socket(
+                _socket.AF_UNIX, _socket.SOCK_STREAM)
+            sock_path = config['address']
+            if _os.path.exists(sock_path):
+                _os.unlink(sock_path)
+            self._socket.bind(sock_path)
+        else:
+            self._log.info(
+                "  Server: %s %d %s",
+                self._config['address'],
+                self._config['port'],
+                self._protocol)
+            if self._protocol == 'SSL':
+                self._ssl_context = self._create_ssl_context()
+            self._socket = _socket.socket(
+                _socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
+            self._socket.setsockopt(
+                _socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            self._socket.bind((config['address'], config['port']))
         self._socket.listen(1)
 
     def __del__(self):
@@ -70,6 +86,8 @@ class Server():
     def _client_connect(self):
         """connect to client, will accept waiting connection"""
         sock, addr = self._socket.accept()
+        if self._protocol == 'SOCKET':
+            addr = (self._config['address'],)
         kwargs = {
             'connection': (sock, addr),
             'ser': self._serial,
@@ -82,7 +100,8 @@ class Server():
         try:
             connection = self.CONNECTIONS[self._protocol](**kwargs)
         except _connection_ssl.SslHandshakeError as err:
-            self._log.info("Client rejected: %s:%d (%s)", *addr, err)
+            self._log.info(
+                "Client rejected: %s:%d (%s)", addr[0], addr[1], err)
             if not self._connections:
                 self._serial.disconnect()
             return
@@ -102,6 +121,10 @@ class Server():
             self.close_connections()
             self._socket.close()
             self._socket = None
+            if self._protocol == 'SOCKET':
+                sock_path = self._config['address']
+                if _os.path.exists(sock_path):
+                    _os.unlink(sock_path)
 
     def has_connections(self):
         """True if server has some connections"""
@@ -138,9 +161,9 @@ class Server():
                 data = b''
                 try:
                     data = con.socket().recv(4096)
-                    self._log.debug("(%s:%d): %s", *con.get_address(), data)
+                    self._log.debug("(%s): %s", con.address_str(), data)
                 except (ConnectionResetError, _ssl.SSLError) as err:
-                    self._log.info("(%s:%d): %s", *con.get_address(), err)
+                    self._log.info("(%s): %s", con.address_str(), err)
                 if not data:
                     self._remove_connection(con)
                     continue
@@ -153,7 +176,7 @@ class Server():
                 result = con.flush()
                 if result is None:
                     self._log.info(
-                        "(%s:%d): write error", *con.get_address())
+                        "(%s): write error", con.address_str())
                     self._remove_connection(con)
 
     def process_stale(self):
@@ -161,7 +184,7 @@ class Server():
         for con in list(self._connections):
             if con.is_stale():
                 self._log.info(
-                    "(%s:%d): send timeout", *con.get_address())
+                    "(%s): send timeout", con.address_str())
                 self._remove_connection(con)
 
     def send(self, data):

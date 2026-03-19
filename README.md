@@ -1,6 +1,6 @@
 # Ser2tcp
 
-Simple proxy for connecting over TCP, TELNET or SSL to serial port
+Simple proxy for connecting over TCP, TELNET, SSL or Unix socket to serial port
 
 https://github.com/cortexm/ser2tcp
 
@@ -8,10 +8,11 @@ https://github.com/cortexm/ser2tcp
 
 - can serve multiple serial ports using pyserial library
 - each serial port can have multiple servers
-- server can use TCP, TELNET or SSL protocol
+- server can use TCP, TELNET, SSL or SOCKET protocol
   - TCP protocol just bridge whole RAW serial stream to TCP
   - TELNET protocol will send every character immediately and not wait for ENTER, it is useful to use standard `telnet` as serial terminal
   - SSL protocol provides encrypted TCP connection with optional mutual TLS (mTLS) client certificate verification
+  - SOCKET protocol uses Unix domain socket for local IPC
 - servers accepts multiple connections at one time
   - each connected client can sent to serial port
   - serial port send received data to all connected clients
@@ -131,12 +132,28 @@ Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `loc
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `address` | Bind address | required |
-| `port` | TCP port | required |
-| `protocol` | `tcp`, `telnet` or `ssl` | required |
+| `address` | Bind address (IP for tcp/telnet/ssl, path for socket) | required |
+| `port` | TCP port (not used for socket) | required |
+| `protocol` | `tcp`, `telnet`, `ssl` or `socket` | required |
 | `ssl` | SSL configuration (required for `ssl` protocol) | - |
 | `send_timeout` | Disconnect client if data cannot be sent within this time (seconds) | 5.0 |
 | `buffer_limit` | Maximum send buffer size per client (bytes), `null` for unlimited | null |
+
+#### Socket configuration
+
+For `socket` protocol, `address` is the path to the Unix domain socket:
+
+```json
+{
+    "address": "/tmp/ser2tcp.sock",
+    "protocol": "socket"
+}
+```
+
+- Socket file is created on startup and removed on shutdown
+- If socket file already exists, it is replaced
+- Connect with: `socat - UNIX-CONNECT:/tmp/ser2tcp.sock`
+- Not available on Windows
 
 #### SSL configuration
 

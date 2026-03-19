@@ -38,7 +38,7 @@ class Connection():
         if self._socket:
             self._socket.close()
             self._socket = None
-            self._log.info("Client disconnected: %s:%d", *self._addr)
+            self._log.info("Client disconnected: %s", self.address_str())
 
     def fileno(self):
         """emulate fileno method of socket"""
@@ -47,6 +47,10 @@ class Connection():
     def get_address(self):
         """Return address"""
         return self._addr
+
+    def address_str(self):
+        """Return formatted address string"""
+        return "%s:%d" % self._addr
 
     def send(self, data):
         """Add data to output buffer, return number of bytes added"""

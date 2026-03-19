@@ -67,7 +67,7 @@ class TestConnectionSsl(unittest.TestCase):
         self.assertEqual(
             first_call,
             unittest.mock.call(
-                "Client connected: %s:%d SSL", '127.0.0.1', 12345))
+                "Client connected: %s SSL", '127.0.0.1:12345'))
         conn.close()
 
     def test_on_received_forwards_to_serial(self):

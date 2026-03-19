@@ -26,4 +26,4 @@ class ConnectionSsl(_connection_tcp.ConnectionTcp):
             (ssl_sock, addr), ser, send_timeout, buffer_limit, log)
 
     def _log_connected(self):
-        self._log.info("Client connected: %s:%d SSL", *self._addr)
+        self._log.info("Client connected: %s SSL", self.address_str())

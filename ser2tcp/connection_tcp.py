@@ -14,7 +14,7 @@ class ConnectionTcp(_connection.Connection):
         self._log_connected()
 
     def _log_connected(self):
-        self._log.info("Client connected: %s:%d TCP", *self._addr)
+        self._log.info("Client connected: %s TCP", self.address_str())
 
     def on_received(self, data):
         """Received data from client"""
