@@ -40,50 +40,50 @@ class TestFixSerialConfig(unittest.TestCase):
     def test_parity_none(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'parity': 'NONE'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['parity'], serial.PARITY_NONE)
 
     def test_parity_even(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'parity': 'EVEN'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['parity'], serial.PARITY_EVEN)
 
     def test_parity_odd(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'parity': 'ODD'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['parity'], serial.PARITY_ODD)
 
     def test_stopbits_one(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'stopbits': 'ONE'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['stopbits'], serial.STOPBITS_ONE)
 
     def test_stopbits_two(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'stopbits': 'TWO'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['stopbits'], serial.STOPBITS_TWO)
 
     def test_bytesize_eightbits(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'bytesize': 'EIGHTBITS'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['bytesize'], serial.EIGHTBITS)
 
     def test_bytesize_sevenbits(self):
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'bytesize': 'SEVENBITS'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['bytesize'], serial.SEVENBITS)
 
     def test_config_without_parity(self):
         """Config without parity should remain unchanged"""
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'baudrate': 115200}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertNotIn('parity', result)
         self.assertEqual(result['baudrate'], 115200)
 
@@ -91,7 +91,7 @@ class TestFixSerialConfig(unittest.TestCase):
         """Unknown parity value should remain unchanged"""
         proxy = self._make_proxy()
         config = {'port': '/dev/ttyUSB0', 'parity': 'UNKNOWN'}
-        result = proxy.fix_serial_config(config)
+        result = proxy._init_serial_config(config)
         self.assertEqual(result['parity'], 'UNKNOWN')
 
 
@@ -201,8 +201,8 @@ class TestFindPortByMatch(unittest.TestCase):
         self.assertEqual(result, '/dev/ttyUSB1')
 
 
-class TestFixSerialConfigMatch(unittest.TestCase):
-    """Test fix_serial_config with match"""
+class TestInitSerialConfigMatch(unittest.TestCase):
+    """Test _init_serial_config with match"""
 
     def _make_proxy(self):
         proxy = SerialProxy.__new__(SerialProxy)
@@ -212,19 +212,15 @@ class TestFixSerialConfigMatch(unittest.TestCase):
     def test_config_requires_port_or_match(self):
         proxy = self._make_proxy()
         with self.assertRaises(ValueError) as ctx:
-            proxy.fix_serial_config({})
+            proxy._init_serial_config({})
         self.assertIn("'port' or 'match'", str(ctx.exception))
 
-    @patch('ser2tcp.serial_proxy._list_ports.comports')
-    def test_config_with_match(self, mock_comports):
-        mock_comports.return_value = [
-            _make_port_info('/dev/ttyUSB0', vid=0x303A, pid=0x4001),
-        ]
+    def test_config_with_match_preserved(self):
         proxy = self._make_proxy()
-        config = {'match': {'vid': '0x303A'}}
-        result = proxy.fix_serial_config(config)
-        self.assertEqual(result['port'], '/dev/ttyUSB0')
-        self.assertNotIn('match', result)
+        config = {'match': {'vid': '0x303A'}, 'baudrate': 115200}
+        result = proxy._init_serial_config(config)
+        self.assertIn('match', result)
+        self.assertEqual(result['match'], {'vid': '0x303A'})
 
 
 if __name__ == "__main__":

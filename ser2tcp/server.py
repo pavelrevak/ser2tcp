@@ -2,8 +2,11 @@
 
 # pylint: disable=C0209
 
-import socket as _socket
 import logging as _logging
+import socket as _socket
+import ssl as _ssl
+
+import ser2tcp.connection_ssl as _connection_ssl
 import ser2tcp.connection_tcp as _connection_tcp
 import ser2tcp.connection_telnet as _connection_telnet
 
@@ -18,6 +21,7 @@ class Server():
     CONNECTIONS = {
         'TCP': _connection_tcp.ConnectionTcp,
         'TELNET': _connection_telnet.ConnectionTelnet,
+        'SSL': _connection_ssl.ConnectionSsl,
     }
 
     def __init__(self, config, ser, log=None):
@@ -28,6 +32,7 @@ class Server():
         self._protocol = self._config['protocol'].upper()
         self._send_timeout = self._config.get('send_timeout')
         self._buffer_limit = self._config.get('buffer_limit')
+        self._ssl_context = None
         self._socket = None
         self._log.info(
             "  Server: %s %d %s",
@@ -36,6 +41,8 @@ class Server():
             self._protocol)
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
+        if self._protocol == 'SSL':
+            self._ssl_context = self._create_ssl_context()
         self._socket = _socket.socket(
             _socket.AF_INET, _socket.SOCK_STREAM, _socket.IPPROTO_TCP)
         self._socket.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
@@ -45,21 +52,40 @@ class Server():
     def __del__(self):
         self.close()
 
+    def _create_ssl_context(self):
+        """Create SSL context from config"""
+        ssl_config = self._config.get('ssl', {})
+        certfile = ssl_config.get('certfile')
+        keyfile = ssl_config.get('keyfile')
+        ca_certs = ssl_config.get('ca_certs')
+        if not certfile or not keyfile:
+            raise ConfigError('SSL protocol requires certfile and keyfile')
+        context = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile, keyfile)
+        if ca_certs:
+            context.load_verify_locations(ca_certs)
+            context.verify_mode = _ssl.CERT_REQUIRED
+        return context
+
     def _client_connect(self):
         """connect to client, will accept waiting connection"""
         sock, addr = self._socket.accept()
-        if not self._connections:
-            if not self._serial.connect():
-                self._log.info("Client canceled: %s:%d", *addr)
-                sock.close()
-                return
-        connection = self.CONNECTIONS[self._protocol](
-            connection=(sock, addr),
-            ser=self._serial,
-            send_timeout=self._send_timeout,
-            buffer_limit=self._buffer_limit,
-            log=self._log,
-        )
+        kwargs = {
+            'connection': (sock, addr),
+            'ser': self._serial,
+            'send_timeout': self._send_timeout,
+            'buffer_limit': self._buffer_limit,
+            'log': self._log,
+        }
+        if self._ssl_context:
+            kwargs['ssl_context'] = self._ssl_context
+        try:
+            connection = self.CONNECTIONS[self._protocol](**kwargs)
+        except _connection_ssl.SslHandshakeError as err:
+            self._log.info("Client rejected: %s:%d (%s)", *addr, err)
+            if not self._connections:
+                self._serial.disconnect()
+            return
         if self._serial.connect():
             self._connections.append(connection)
         else:
@@ -113,7 +139,7 @@ class Server():
                 try:
                     data = con.socket().recv(4096)
                     self._log.debug("(%s:%d): %s", *con.get_address(), data)
-                except ConnectionResetError as err:
+                except (ConnectionResetError, _ssl.SSLError) as err:
                     self._log.info("(%s:%d): %s", *con.get_address(), err)
                 if not data:
                     self._remove_connection(con)

@@ -36,22 +36,22 @@ class SerialProxy():
         self._log = log if log else _logging.Logger(self.__class__.__name__)
         self._serial = None
         self._servers = []
-        self._serial_config = self.fix_serial_config(config['serial'])
+        self._serial_config = self._init_serial_config(config['serial'])
+        self._match = self._serial_config.pop('match', None)
+        port = self._serial_config.get('port')
         baudrate = self._serial_config.get('baudrate')
+        name = port if port else f"match:{self._match}"
         if baudrate:
-            self._log.info(
-                "Serial: %s %d", self._serial_config['port'], baudrate)
+            self._log.info("Serial: %s %d", name, baudrate)
         else:
-            self._log.info("Serial: %s", self._serial_config['port'])
+            self._log.info("Serial: %s", name)
         for server_config in config['servers']:
             self._servers.append(_server.Server(server_config, self, log))
 
-    def fix_serial_config(self, config):
-        """Fix serial configuration - resolve match, convert enum values"""
-        if 'port' not in config:
-            if 'match' not in config:
-                raise ValueError("Serial config must have 'port' or 'match'")
-            config['port'] = self.find_port_by_match(config.pop('match'))
+    def _init_serial_config(self, config):
+        """Initialize serial configuration - validate and convert enum values"""
+        if 'port' not in config and 'match' not in config:
+            raise ValueError("Serial config must have 'port' or 'match'")
         if 'parity' in config:
             for key, val in self.PARITY_CONFIG.items():
                 if config['parity'] == key:
@@ -106,6 +106,13 @@ class SerialProxy():
     def connect(self):
         """Connect to serial port"""
         if not self._serial:
+            if self._match:
+                try:
+                    self._serial_config['port'] = self.find_port_by_match(
+                        self._match)
+                except ValueError as err:
+                    self._log.warning(err)
+                    return False
             try:
                 self._serial = _serial.Serial(**self._serial_config)
             except (_serial.SerialException, OSError) as err:

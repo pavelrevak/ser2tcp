@@ -1,6 +1,6 @@
 # Ser2tcp
 
-Simple proxy for connecting over TCP or telnet to serial port
+Simple proxy for connecting over TCP, TELNET or SSL to serial port
 
 https://github.com/cortexm/ser2tcp
 
@@ -8,9 +8,10 @@ https://github.com/cortexm/ser2tcp
 
 - can serve multiple serial ports using pyserial library
 - each serial port can have multiple servers
-- server can use TCP or TELNET protocol
+- server can use TCP, TELNET or SSL protocol
   - TCP protocol just bridge whole RAW serial stream to TCP
   - TELNET protocol will send every character immediately and not wait for ENTER, it is useful to use standard `telnet` as serial terminal
+  - SSL protocol provides encrypted TCP connection with optional mutual TLS (mTLS) client certificate verification
 - servers accepts multiple connections at one time
   - each connected client can sent to serial port
   - serial port send received data to all connected clients
@@ -119,6 +120,7 @@ Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `loc
 - Wildcard `*` supported (e.g. `"product": "CP210*"`)
 - Matching is case-insensitive
 - Error if multiple devices match the criteria
+- Device is resolved when client connects, not at startup (device does not need to exist at startup)
 - `baudrate` is optional (default 9600, CDC devices ignore it)
 
 ### Server configuration
@@ -127,9 +129,81 @@ Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `loc
 |-----------|-------------|---------|
 | `address` | Bind address | required |
 | `port` | TCP port | required |
-| `protocol` | `tcp` or `telnet` | required |
+| `protocol` | `tcp`, `telnet` or `ssl` | required |
+| `ssl` | SSL configuration (required for `ssl` protocol) | - |
 | `send_timeout` | Disconnect client if data cannot be sent within this time (seconds) | 5.0 |
 | `buffer_limit` | Maximum send buffer size per client (bytes), `null` for unlimited | null |
+
+#### SSL configuration
+
+For `ssl` protocol, add `ssl` object with certificate paths:
+
+```json
+{
+    "address": "0.0.0.0",
+    "port": 10003,
+    "protocol": "ssl",
+    "ssl": {
+        "certfile": "/path/to/server.crt",
+        "keyfile": "/path/to/server.key",
+        "ca_certs": "/path/to/ca.crt"
+    }
+}
+```
+
+| Parameter | Description | Required |
+|-----------|-------------|----------|
+| `certfile` | Server certificate (PEM) | yes |
+| `keyfile` | Server private key (PEM) | yes |
+| `ca_certs` | CA certificate for client verification (mTLS) | no |
+
+If `ca_certs` is specified, clients must provide a valid certificate signed by the CA.
+
+##### Creating self-signed certificates
+
+Generate CA and server certificate for testing:
+
+```bash
+# Create CA key and certificate
+openssl genrsa -out ca.key 2048
+openssl req -new -x509 -days 365 -key ca.key -out ca.crt -subj "/CN=ser2tcp CA" \
+    -addext "basicConstraints=critical,CA:TRUE" \
+    -addext "keyUsage=critical,keyCertSign,cRLSign"
+
+# Create server key and certificate signing request
+openssl genrsa -out server.key 2048
+openssl req -new -key server.key -out server.csr -subj "/CN=localhost"
+
+# Sign server certificate with CA
+openssl x509 -req -days 365 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt
+
+# For certificate bound to specific domain/IP (SAN - Subject Alternative Name):
+openssl req -new -key server.key -out server.csr -subj "/CN=myserver.example.com" -addext "subjectAltName=DNS:myserver.example.com,DNS:localhost,IP:192.168.1.100"
+openssl x509 -req -days 365 -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -copy_extensions copy
+
+# Clean up CSR
+rm server.csr
+```
+
+For mTLS (mutual TLS with client certificates):
+
+```bash
+# Create client key and certificate
+openssl genrsa -out client.key 2048
+openssl req -new -key client.key -out client.csr -subj "/CN=client"
+openssl x509 -req -days 365 -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt
+rm client.csr
+```
+
+Testing SSL connection:
+
+```bash
+# Without client certificate
+openssl s_client -connect localhost:10003
+
+# With client certificate (mTLS)
+openssl s_client -connect localhost:10003 -cert client.crt -key client.key
+```
 
 ## Usage examples
 
