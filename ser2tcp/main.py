@@ -76,12 +76,21 @@ def main():
     log = _logging.getLogger('ser2tcp')
     log.setLevel((30, 20, 10)[min(2, args.verbose)])
 
-    configuration = []
     with open(args.config, "r", encoding='utf-8') as config_file:
         configuration = _json.load(config_file)
 
+    if isinstance(configuration, list):
+        ports = configuration
+    elif isinstance(configuration, dict):
+        ports = configuration.get('ports', [])
+    else:
+        raise SystemExit("Invalid configuration format")
+
+    if not ports:
+        raise SystemExit("No ports configured")
+
     servers_manager = _server_manager.ServersManager()
-    for config in configuration:
+    for config in ports:
         servers_manager.add_server(_serial_proxy.SerialProxy(config, log))
 
     _signal.signal(_signal.SIGTERM, servers_manager.stop)

@@ -55,31 +55,35 @@ pip uninstall ser2tcp
 ## Configuration file example
 
 ```json
-[
-    {
-        "serial": {
-            "port": "/dev/ttyUSB0",
-            "baudrate": 115200,
-            "parity": "NONE",
-            "stopbits": "ONE"
-        },
-        "servers": [
-            {
-                "address": "127.0.0.1",
-                "port": 10001,
-                "protocol": "tcp"
+{
+    "ports": [
+        {
+            "serial": {
+                "port": "/dev/ttyUSB0",
+                "baudrate": 115200,
+                "parity": "NONE",
+                "stopbits": "ONE"
             },
-            {
-                "address": "0.0.0.0",
-                "port": 10002,
-                "protocol": "telnet",
-                "send_timeout": 5.0,
-                "buffer_limit": 65536
-            }
-        ]
-    }
-]
+            "servers": [
+                {
+                    "address": "127.0.0.1",
+                    "port": 10001,
+                    "protocol": "tcp"
+                },
+                {
+                    "address": "0.0.0.0",
+                    "port": 10002,
+                    "protocol": "telnet",
+                    "send_timeout": 5.0,
+                    "buffer_limit": 65536
+                }
+            ]
+        }
+    ]
+}
 ```
+
+Legacy format (JSON array at root level) is still supported for backward compatibility.
 
 ### Serial configuration
 
