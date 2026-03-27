@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "pyserial>=3.0",
+    "uhttp-server>=2.3.0",
 ]
 
 [project.urls]
@@ -31,6 +32,9 @@ ser2tcp = "ser2tcp.main:main"
 
 [tool.setuptools.packages.find]
 include = ["ser2tcp*"]
+
+[tool.setuptools.package-data]
+ser2tcp = ["html/**"]
 
 [tool.setuptools_scm]
 write_to = "ser2tcp/_version.py"

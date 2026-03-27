@@ -32,7 +32,7 @@ class SerialProxy():
         'EIGHTBITS': _serial.EIGHTBITS,
     }
     MATCH_ATTRIBUTES = ('vid', 'pid', 'serial_number', 'manufacturer',
-        'product', 'location')
+        'product', 'location', 'description', 'hwid')
 
     def __init__(self, config, log=None):
         self._log = log if log else _logging.Logger(self.__class__.__name__)
@@ -42,8 +42,8 @@ class SerialProxy():
         self._reader_sock_w = None
         self._reader_running = False
         self._servers = []
+        self._match = config['serial'].get('match')
         self._serial_config = self._init_serial_config(config['serial'])
-        self._match = self._serial_config.pop('match', None)
         port = self._serial_config.get('port')
         baudrate = self._serial_config.get('baudrate')
         name = port if port else f"match:{self._match}"
@@ -58,6 +58,7 @@ class SerialProxy():
         """Initialize serial configuration - validate and convert enum values"""
         if 'port' not in config and 'match' not in config:
             raise ValueError("Serial config must have 'port' or 'match'")
+        config = {k: v for k, v in config.items() if k != 'match'}
         if 'parity' in config:
             for key, val in self.PARITY_CONFIG.items():
                 if config['parity'] == key:
@@ -147,6 +148,26 @@ class SerialProxy():
         self._reader_sock_r = None
         self._reader_sock_w = None
 
+    @property
+    def serial_config(self):
+        """Return serial configuration"""
+        return self._serial_config
+
+    @property
+    def match(self):
+        """Return match criteria"""
+        return self._match
+
+    @property
+    def is_connected(self):
+        """Return True if serial port is connected"""
+        return self._serial is not None
+
+    @property
+    def servers(self):
+        """Return list of servers"""
+        return self._servers
+
     def connect(self):
         """Connect to serial port"""
         if not self._serial:
@@ -182,6 +203,8 @@ class SerialProxy():
             self._serial = None
             self._log.info(
                 "Serial %s disconnected", self._serial_config['port'])
+            if getattr(self, '_match', None):
+                del self._serial_config['port']
 
     def close(self):
         """Close socket and all connections"""

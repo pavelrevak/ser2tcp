@@ -61,9 +61,17 @@ def main():
         '-u', '--usb', action='store_true',
         help="List USB serial devices and exit")
     parser.add_argument(
+        '--hash-password', metavar='PASSWORD',
+        help="Hash password for config file and exit")
+    parser.add_argument(
         '-c', '--config',
         help="configuration in JSON format")
     args = parser.parse_args()
+
+    if args.hash_password:
+        import ser2tcp.http_auth as _http_auth
+        print(_http_auth.hash_password(args.hash_password))
+        return
 
     if args.usb:
         list_usb_devices()
@@ -90,8 +98,17 @@ def main():
         raise SystemExit("No ports configured")
 
     servers_manager = _server_manager.ServersManager()
+    serial_proxies = []
     for config in ports:
-        servers_manager.add_server(_serial_proxy.SerialProxy(config, log))
+        proxy = _serial_proxy.SerialProxy(config, log)
+        serial_proxies.append(proxy)
+        servers_manager.add_server(proxy)
+
+    if isinstance(configuration, dict) and 'http' in configuration:
+        import ser2tcp.http_server as _http_server
+        http_server = _http_server.HttpServerWrapper(
+            configuration['http'], serial_proxies, log)
+        servers_manager.add_server(http_server)
 
     _signal.signal(_signal.SIGTERM, servers_manager.stop)
     _signal.signal(_signal.SIGINT, servers_manager.stop)

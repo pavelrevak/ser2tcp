@@ -219,12 +219,12 @@ class TestInitSerialConfigMatch(unittest.TestCase):
             proxy._init_serial_config({})
         self.assertIn("'port' or 'match'", str(ctx.exception))
 
-    def test_config_with_match_preserved(self):
+    def test_config_with_match_filtered(self):
         proxy = self._make_proxy()
         config = {'match': {'vid': '0x303A'}, 'baudrate': 115200}
         result = proxy._init_serial_config(config)
-        self.assertIn('match', result)
-        self.assertEqual(result['match'], {'vid': '0x303A'})
+        self.assertNotIn('match', result)
+        self.assertEqual(result['baudrate'], 115200)
 
 
 class TestSerialReaderThread(unittest.TestCase):

@@ -83,6 +83,21 @@ class Server():
             context.verify_mode = _ssl.CERT_REQUIRED
         return context
 
+    @property
+    def protocol(self):
+        """Return protocol name"""
+        return self._protocol
+
+    @property
+    def config(self):
+        """Return server configuration"""
+        return self._config
+
+    @property
+    def connections(self):
+        """Return list of connections"""
+        return self._connections
+
     def _client_connect(self):
         """connect to client, will accept waiting connection"""
         sock, addr = self._socket.accept()

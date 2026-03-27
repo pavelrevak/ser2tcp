@@ -17,6 +17,9 @@ https://github.com/cortexm/ser2tcp
   - each connected client can sent to serial port
   - serial port send received data to all connected clients
 - non-blocking send with configurable timeout and buffer limit
+- built-in HTTP server with REST API for status monitoring
+- web interface for viewing configured ports and connections
+- authentication with session management and API tokens
 
 ## Installation
 
@@ -43,6 +46,8 @@ pip uninstall ser2tcp
   -V, --version         show program's version number and exit
   -v, --verbose         Increase verbosity
   -u, --usb             List USB serial devices and exit
+  --hash-password PASSWORD
+                        Hash password for config file and exit
   -c CONFIG, --config CONFIG
                         configuration in JSON format
 ```
@@ -120,7 +125,7 @@ $ ser2tcp --usb
   location: 1-1
 ```
 
-Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `location`
+Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `location`, `description`, `hwid`
 
 - Wildcard `*` supported (e.g. `"product": "CP210*"`)
 - Matching is case-insensitive
@@ -226,6 +231,68 @@ openssl s_client -connect localhost:10003
 openssl s_client -connect localhost:10003 -cert client.crt -key client.key
 ```
 
+### HTTP server and API
+
+Optional HTTP server for monitoring and management:
+
+```json
+{
+    "http": [
+        {"address": "0.0.0.0", "port": 8080}
+    ]
+}
+```
+
+With authentication:
+
+```json
+{
+    "http": [{
+        "address": "0.0.0.0",
+        "port": 8080,
+        "auth": {
+            "session_timeout": 3600,
+            "users": [
+                {"login": "admin", "password": "sha256:...", "admin": true}
+            ],
+            "tokens": [
+                {"token": "my-api-key", "name": "monitoring"}
+            ]
+        }
+    }]
+}
+```
+
+Generate password hash:
+
+```bash
+ser2tcp --hash-password mysecretpassword
+```
+
+HTTPS with SSL:
+
+```json
+{
+    "http": [
+        {"address": "0.0.0.0", "port": 8080},
+        {"address": "0.0.0.0", "port": 8443, "ssl": {
+            "certfile": "server.crt", "keyfile": "server.key"
+        }}
+    ]
+}
+```
+
+#### API endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/login` | no | Authenticate, returns session token |
+| POST | `/api/logout` | no | Invalidate session |
+| GET | `/api/status` | yes | Runtime status (serial ports, servers, connections) |
+| GET | `/api/ports` | yes | Available serial ports with USB/device attributes |
+
+Authentication: `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Without `auth` configuration, all endpoints are accessible without authentication.
+
 ## Usage examples
 
 ```
@@ -307,6 +374,7 @@ For system service, use `sudo systemctl` instead of `systemctl --user`.
 
 - Python 3.8+
 - pyserial 3.0+
+- uhttp-server 2.3.0+ (for HTTP/API)
 
 ### Running on
 
