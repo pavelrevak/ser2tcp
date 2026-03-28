@@ -1,0 +1,42 @@
+body { font-family: sans-serif; margin: 2em; background: #f5f5f5; }
+h1 { color: #333; margin: 0; }
+.section { background: #fff; padding: 1em; margin: 1em 0;
+  border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.section h2 { margin-top: 0; color: #555; }
+ul { padding-left: 1.5em; }
+li { margin: 0.3em 0; }
+dl { margin: 0.3em 0 0.3em 1.5em; display: grid;
+  grid-template-columns: auto 1fr; gap: 0 1em; }
+dt { font-weight: bold; color: #666; }
+dd { margin: 0; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.4em 0.8em; border-bottom: 1px solid #eee; }
+th { color: #666; }
+input { padding: 0.4em; border: 1px solid #ccc; border-radius: 4px; }
+button { padding: 0.4em 1em; border: none; border-radius: 4px;
+  cursor: pointer; color: #fff; }
+.btn-primary { background: #4a9eff; }
+.btn-danger { background: #e55; }
+.btn-small { padding: 0.2em 0.6em; font-size: 0.9em; }
+.login-box { max-width: 300px; margin: 4em auto; }
+.login-box input { width: 100%; margin-bottom: 0.5em; box-sizing: border-box; }
+.login-box button { width: 100%; }
+.error { color: #e55; margin: 0.5em 0; }
+.hidden { display: none; }
+.badge { display: inline-block; padding: 0.1em 0.5em; border-radius: 3px;
+  font-size: 0.8em; background: #e8e8e8; color: #666; }
+.badge-admin { background: #4a9eff; color: #fff; }
+.badge-on { background: #4c4; color: #fff; }
+.badge-off { background: #ccc; }
+.toolbar { margin: 1em 0; }
+header { display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 1em; }
+.user-info { display: flex; align-items: center; gap: 1em; color: #666; }
+.user-info button { background: none; border: 1px solid #ccc; color: #666; }
+.user-info button:hover { background: #eee; }
+nav { margin-bottom: 1em; }
+nav button { background: none; border: none; color: #4a9eff;
+  cursor: pointer; padding: 0.3em 0.8em; font-size: 1em; }
+nav button.active { border-bottom: 2px solid #4a9eff; font-weight: bold; }
+nav button:hover { color: #2a7edf; }
+.empty { color: #999; font-style: italic; }

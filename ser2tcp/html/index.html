@@ -3,96 +3,50 @@
 <head>
 <meta charset="utf-8">
 <title>ser2tcp</title>
-<style>
-  body { font-family: sans-serif; margin: 2em; background: #f5f5f5; }
-  h1 { color: #333; }
-  .port { background: #fff; padding: 1em; margin: 1em 0;
-    border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .port h2 { margin-top: 0; color: #555; }
-  ul { padding-left: 1.5em; }
-  li { margin: 0.3em 0; }
-  dl { margin: 0.3em 0 0.3em 1.5em; display: grid;
-    grid-template-columns: auto 1fr; gap: 0 1em; }
-  dt { font-weight: bold; color: #666; }
-  dd { margin: 0; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>ser2tcp</h1>
-<div id="ports"></div>
-<h1>Available ports</h1>
-<div id="available"></div>
-<script>
-function el(tag, text) {
-  const e = document.createElement(tag);
-  if (text) e.textContent = text;
-  return e;
-}
 
-fetch('/api/status')
-  .then(r => r.json())
-  .then(data => {
-    const root = document.getElementById('ports');
-    data.ports.forEach((p, i) => {
-      const ser = p.serial || {};
-      let name = ser.port || '';
-      if (ser.match)
-        name = 'match: ' + Object.entries(ser.match).map(
-          ([k, v]) => k + '=' + v).join(', ');
-      const connected = ser.connected ? 'connected' : 'disconnected';
-      let info = connected;
-      if (ser.baudrate) info = ser.baudrate + ' \u2014 ' + info;
+<div id="login-view" class="login-box hidden">
+  <h1>ser2tcp</h1>
+  <div class="section">
+    <h2>Login</h2>
+    <div id="login-error" class="error hidden"></div>
+    <input id="login-user" type="text" placeholder="Login" autocomplete="username">
+    <input id="login-pass" type="password" placeholder="Password" autocomplete="current-password">
+    <button class="btn-primary" id="login-btn">Login</button>
+  </div>
+</div>
 
-      const div = el('div');
-      div.className = 'port';
-      div.appendChild(el('h2', 'Port ' + i + ': ' + name));
-      div.appendChild(el('p', info));
-      div.appendChild(el('h3', 'Servers:'));
+<div id="app" class="hidden">
+  <header>
+    <h1>ser2tcp</h1>
+    <div class="user-info hidden" id="user-info">
+      <span id="user-name"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+  </header>
+  <nav>
+    <button class="active" data-tab="status">Status</button>
+    <button data-tab="ports">Available ports</button>
+    <button data-tab="users">Users</button>
+  </nav>
 
-      const ul = el('ul');
-      (p.servers || []).forEach(s => {
-        const proto = (s.protocol || 'tcp').toUpperCase();
-        const addr = proto === 'SOCKET' ? s.address : s.address + ':' + s.port;
-        const li = el('li', proto + ' \u2014 ' + addr);
-        const clients = s.connections || [];
-        if (clients.length) {
-          const cul = el('ul');
-          clients.forEach(c => cul.appendChild(el('li', c.address)));
-          li.appendChild(cul);
-        } else {
-          li.appendChild(el('em', ' no connections'));
-        }
-        ul.appendChild(li);
-      });
-      div.appendChild(ul);
-      root.appendChild(div);
-    });
-  });
+  <div id="tab-status"><div id="status-content"></div></div>
+  <div id="tab-ports" class="hidden"><div id="ports-content"></div></div>
+  <div id="tab-users" class="hidden">
+    <div id="users-content"></div>
+    <div class="toolbar">
+      <h3>Add user</h3>
+      <input id="new-login" type="text" placeholder="Login" autocomplete="off">
+      <input id="new-pass" type="password" placeholder="Password" autocomplete="new-password">
+      <label><input id="new-admin" type="checkbox" checked disabled> Admin</label>
+      <button class="btn-primary" id="add-user-btn">Add</button>
+      <div id="user-error" class="error hidden"></div>
+    </div>
+  </div>
+</div>
 
-fetch('/api/ports')
-  .then(r => r.json())
-  .then(ports => {
-    const root = document.getElementById('available');
-    if (!ports.length) {
-      root.appendChild(el('p', 'No serial ports detected'));
-      return;
-    }
-    const ul = el('ul');
-    ports.forEach(p => {
-      const li = el('li', p.device);
-      const attrs = Object.entries(p).filter(([k]) => k !== 'device');
-      if (attrs.length) {
-        const dl = el('dl');
-        attrs.forEach(([k, v]) => {
-          dl.appendChild(el('dt', k));
-          dl.appendChild(el('dd', v));
-        });
-        li.appendChild(dl);
-      }
-      ul.appendChild(li);
-    });
-    root.appendChild(ul);
-  });
-</script>
+<script src="app.js"></script>
 </body>
 </html>

@@ -30,12 +30,20 @@ class MockClient:
 
 def make_wrapper(auth_config=None, serial_proxies=None):
     """Create HttpServerWrapper with mocked uhttp server"""
-    config = {'address': '127.0.0.1', 'port': 0}
+    http_config = {'address': '127.0.0.1', 'port': 0}
+    # Auth config goes at root level of configuration
+    configuration = {'http': [http_config]}
     if auth_config:
-        config['auth'] = auth_config
+        if 'users' in auth_config:
+            configuration['users'] = auth_config['users']
+        if 'tokens' in auth_config:
+            configuration['tokens'] = auth_config['tokens']
+        if 'session_timeout' in auth_config:
+            configuration['session_timeout'] = auth_config['session_timeout']
     proxies = serial_proxies if serial_proxies is not None else []
     with patch('ser2tcp.http_server._uhttp_server.HttpServer'):
-        return HttpServerWrapper(config, proxies, log=Mock())
+        return HttpServerWrapper(http_config, proxies, log=Mock(),
+            configuration=configuration)
 
 
 class TestRouting(unittest.TestCase):
@@ -350,6 +358,187 @@ class TestApiPorts(unittest.TestCase):
                 return_value=[port]):
             wrapper._handle_request(client)
         self.assertEqual(client.responded[0]['description'], 'USB Serial Port')
+
+
+class TestApiUsers(unittest.TestCase):
+    def _auth_config(self):
+        return {
+            'users': [{
+                'login': 'admin',
+                'password': hash_password('secret'),
+                'admin': True,
+            }],
+        }
+
+    def _admin_token(self, wrapper):
+        client = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'admin', 'password': 'secret'})
+        wrapper._handle_request(client)
+        return client.responded['token']
+
+    def _auth_client(self, token, method='GET', path='/', data=None):
+        return MockClient(
+            method=method, path=path, data=data,
+            headers={'authorization': f'Bearer {token}'})
+
+    def test_list_users(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(token, path='/api/users')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        self.assertEqual(len(client.responded), 1)
+        self.assertEqual(client.responded[0]['login'], 'admin')
+        self.assertNotIn('password', client.responded[0])
+
+    def test_add_user(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/users',
+            data={'login': 'new', 'password': 'pass123'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+        # Verify new user can login
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'new', 'password': 'pass123'})
+        wrapper._handle_request(login)
+        self.assertEqual(login.respond_status, 200)
+
+    def test_add_user_with_hash(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        h = hash_password('hashed')
+        client = self._auth_client(
+            token, method='POST', path='/api/users',
+            data={'login': 'new', 'password': h})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'new', 'password': 'hashed'})
+        wrapper._handle_request(login)
+        self.assertEqual(login.respond_status, 200)
+
+    def test_add_user_duplicate(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/users',
+            data={'login': 'admin', 'password': 'x'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_user_missing_fields(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/users',
+            data={'login': 'new'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_user_non_admin(self):
+        auth = self._auth_config()
+        auth['users'].append({
+            'login': 'viewer', 'password': hash_password('pass'),
+        })
+        wrapper = make_wrapper(auth_config=auth)
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'viewer', 'password': 'pass'})
+        wrapper._handle_request(login)
+        token = login.responded['token']
+        client = self._auth_client(
+            token, method='POST', path='/api/users',
+            data={'login': 'x', 'password': 'x'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 403)
+
+    def test_update_user_password(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='PUT', path='/api/users/admin',
+            data={'password': 'newpass'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'admin', 'password': 'newpass'})
+        wrapper._handle_request(login)
+        self.assertEqual(login.respond_status, 200)
+
+    def test_update_user_not_found(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='PUT', path='/api/users/nobody',
+            data={'password': 'x'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_delete_user(self):
+        auth = self._auth_config()
+        auth['users'].append({
+            'login': 'toremove', 'password': hash_password('x'),
+        })
+        wrapper = make_wrapper(auth_config=auth)
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='DELETE', path='/api/users/toremove')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'toremove', 'password': 'x'})
+        wrapper._handle_request(login)
+        self.assertEqual(login.respond_status, 401)
+
+    def test_delete_user_not_found(self):
+        wrapper = make_wrapper(auth_config=self._auth_config())
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='DELETE', path='/api/users/nobody')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_users_list_no_auth(self):
+        wrapper = make_wrapper()
+        client = MockClient(path='/api/users')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        self.assertEqual(client.responded, [])
+
+    def test_bootstrap_add_first_user(self):
+        """Add first user without any auth configured"""
+        wrapper = make_wrapper()
+        client = MockClient(
+            method='POST', path='/api/users',
+            data={'login': 'admin', 'password': 'secret', 'admin': True})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+        # Auth is now active - need token
+        client2 = MockClient(path='/api/status')
+        wrapper._handle_request(client2)
+        self.assertEqual(client2.respond_status, 401)
+        # Can login with new user
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'admin', 'password': 'secret'})
+        wrapper._handle_request(login)
+        self.assertEqual(login.respond_status, 200)
+
+    def test_bootstrap_empty_auth(self):
+        """Add first user when auth section exists but empty"""
+        wrapper = make_wrapper(auth_config={})
+        client = MockClient(
+            method='POST', path='/api/users',
+            data={'login': 'admin', 'password': 'pass', 'admin': True})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
 
 
 class TestConfigVariants(unittest.TestCase):

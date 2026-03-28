@@ -1,5 +1,6 @@
 """HTTP server integration with uhttp"""
 
+import json as _json
 import logging as _logging
 import pathlib as _pathlib
 import ssl as _ssl
@@ -16,17 +17,29 @@ HTML_DIR = _pathlib.Path(__file__).parent / 'html'
 class HttpServerWrapper():
     """Wrapper around uhttp.HttpServer compatible with ServersManager"""
 
-    def __init__(self, configs, serial_proxies, log=None):
+    def __init__(self, configs, serial_proxies, log=None,
+            config_path=None, configuration=None):
         self._log = log if log else _logging.getLogger(__name__)
         self._serial_proxies = serial_proxies
+        self._config_path = config_path
+        self._configuration = configuration if configuration else {}
         if isinstance(configs, dict):
             configs = [configs]
-        # Auth config is shared across all HTTP servers
-        auth_config = None
-        for config in configs:
-            if 'auth' in config:
-                auth_config = config['auth']
-                break
+        # Auth config at root level (users, tokens, session_timeout)
+        # Migrate from old format (auth inside http config) if needed
+        auth_config = {}
+        if self._configuration.get('users'):
+            auth_config['users'] = self._configuration['users']
+        if self._configuration.get('tokens'):
+            auth_config['tokens'] = self._configuration['tokens']
+        if 'session_timeout' in self._configuration:
+            auth_config['session_timeout'] = self._configuration['session_timeout']
+        # Backward compatibility: migrate auth from http config to root
+        if not auth_config:
+            for config in configs:
+                if 'auth' in config:
+                    auth_config = config['auth']
+                    break
         self._auth = _http_auth.SessionManager(auth_config) if auth_config else None
         self._servers = []
         for config in configs:
@@ -72,6 +85,7 @@ class HttpServerWrapper():
         for server in self._servers:
             server.process_events([], write_sockets)
 
+
     def process_stale(self):
         """Cleanup expired sessions"""
         if self._auth:
@@ -91,22 +105,29 @@ class HttpServerWrapper():
             return client.query.get('token')
         return None
 
+    def _error(self, client, error, status):
+        """Log warning and send error response"""
+        self._log.warning("%s", error)
+        client.respond({'error': error}, status=status)
+
     def _require_auth(self, client):
         """Check authentication, return user info or None (sends 401)"""
-        if not self._auth:
+        if not self._auth or self._auth.is_empty:
             return {'login': None, 'admin': True}
         token = self._get_bearer_token(client)
         if not token:
-            client.respond({'error': 'Authorization required'}, status=401)
+            self._error(client, 'Authorization required', 401)
             return None
         user = self._auth.authenticate(token)
         if not user:
-            client.respond({'error': 'Invalid or expired token'}, status=401)
+            self._error(client, 'Invalid or expired token', 401)
             return None
         return user
 
     def _handle_request(self, client):
         """Handle HTTP request"""
+        if self._log.isEnabledFor(_logging.INFO):
+            self._log.info("%s %s", client.method, client.path)
         # Login endpoint - no auth required
         if client.method == 'POST' and client.path == '/api/login':
             self._handle_api_login(client)
@@ -127,8 +148,23 @@ class HttpServerWrapper():
             self._handle_api_status(client)
         elif client.method == 'GET' and client.path == '/api/ports':
             self._handle_api_ports(client)
+        elif client.path == '/api/users':
+            if client.method == 'GET':
+                self._handle_api_users_list(client)
+            elif client.method == 'POST':
+                self._handle_api_users_add(client, user)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path.startswith('/api/users/'):
+            login = client.path[len('/api/users/'):]
+            if client.method == 'PUT':
+                self._handle_api_users_update(client, user, login)
+            elif client.method == 'DELETE':
+                self._handle_api_users_delete(client, user, login)
+            else:
+                self._error(client, 'Method not allowed', 405)
         else:
-            client.respond({'error': 'Not found'}, status=404)
+            self._error(client, 'Not found', 404)
 
     def _handle_static(self, client):
         """Serve static files from html directory"""
@@ -137,10 +173,10 @@ class HttpServerWrapper():
             path = 'index.html'
         file_path = (HTML_DIR / path).resolve()
         if not str(file_path).startswith(str(HTML_DIR)):
-            client.respond('Not Found', status=404)
+            self._error(client, 'Not found', 404)
             return
         if not file_path.is_file():
-            client.respond('Not Found', status=404)
+            self._error(client, 'Not found', 404)
             return
         client.respond_file(str(file_path))
 
@@ -201,18 +237,17 @@ class HttpServerWrapper():
     def _handle_api_login(self, client):
         """Authenticate user and return session token"""
         if not self._auth:
-            client.respond({'error': 'Auth not configured'}, status=404)
+            self._error(client, 'Auth not configured', 404)
             return
         data = client.data
         if not isinstance(data, dict):
-            client.respond({'error': 'Invalid request'}, status=400)
+            self._error(client, 'Invalid request', 400)
             return
         login = data.get('login', '')
         password = data.get('password', '')
         token = self._auth.login(login, password)
         if not token:
-            self._log.info("Login failed: %s", login)
-            client.respond({'error': 'Invalid credentials'}, status=401)
+            self._error(client, f'Login failed: {login}', 401)
             return
         self._log.info("Login: %s", login)
         client.respond({'token': token})
@@ -220,9 +255,129 @@ class HttpServerWrapper():
     def _handle_api_logout(self, client):
         """Invalidate session"""
         if not self._auth:
-            client.respond({'error': 'Auth not configured'}, status=404)
+            self._error(client, 'Auth not configured', 404)
             return
         token = self._get_bearer_token(client)
         if token:
             self._auth.logout(token)
+        client.respond({'ok': True})
+
+    def _require_admin(self, client, user):
+        """Check if user is admin, send 403 if not"""
+        if not user.get('admin'):
+            self._error(client, 'Admin access required', 403)
+            return False
+        return True
+
+    def _ensure_auth(self):
+        """Create auth if not exists, return SessionManager"""
+        if not self._auth:
+            self._auth = _http_auth.SessionManager({})
+        return self._auth
+
+    def _save_auth_config(self):
+        """Save auth config to config file (users, tokens at root level)"""
+        if not self._config_path or not self._configuration:
+            return
+        auth_config = self._auth.get_auth_config()
+        # Save at root level
+        if auth_config.get('users'):
+            self._configuration['users'] = auth_config['users']
+        elif 'users' in self._configuration:
+            del self._configuration['users']
+        if auth_config.get('tokens'):
+            self._configuration['tokens'] = auth_config['tokens']
+        elif 'tokens' in self._configuration:
+            del self._configuration['tokens']
+        if 'session_timeout' in auth_config:
+            self._configuration['session_timeout'] = auth_config['session_timeout']
+        # Remove old auth from http configs (migration)
+        http_configs = self._configuration.get('http', [])
+        if isinstance(http_configs, dict):
+            http_configs = [http_configs]
+        for config in http_configs:
+            config.pop('auth', None)
+        with open(self._config_path, 'w', encoding='utf-8') as f:
+            _json.dump(self._configuration, f, indent=4)
+            f.write('\n')
+
+    def _handle_api_users_list(self, client):
+        """List users (without passwords)"""
+        if not self._auth:
+            client.respond([])
+            return
+        client.respond(self._auth.list_users())
+
+    def _handle_api_users_add(self, client, user):
+        """Add new user"""
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        if not isinstance(data, dict) or 'login' not in data \
+                or 'password' not in data:
+            self._error(client, 'login and password required', 400)
+            return
+        kwargs = {}
+        if 'admin' in data:
+            kwargs['admin'] = bool(data['admin'])
+        if 'session_timeout' in data:
+            kwargs['session_timeout'] = data['session_timeout']
+        auth = self._ensure_auth()
+        is_first = auth.is_empty
+        if not auth.add_user(data['login'], data['password'], **kwargs):
+            self._error(client, 'User already exists', 400)
+            return
+        self._save_auth_config()
+        self._log.info("User added: %s", data['login'])
+        if is_first:
+            token = auth.create_session(data['login'])
+            client.respond({'ok': True, 'token': token}, status=201)
+        else:
+            client.respond({'ok': True}, status=201)
+
+    def _handle_api_users_update(self, client, user, login):
+        """Update existing user"""
+        if not self._auth:
+            self._error(client, 'User not found', 404)
+            return
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        if not isinstance(data, dict):
+            self._error(client, 'Invalid request', 400)
+            return
+        kwargs = {}
+        if 'password' in data:
+            kwargs['password'] = data['password']
+        if 'admin' in data:
+            kwargs['admin'] = bool(data['admin'])
+        if 'session_timeout' in data:
+            kwargs['session_timeout'] = data['session_timeout']
+        result = self._auth.update_user(login, **kwargs)
+        if result is False:
+            self._error(client, 'User not found', 404)
+            return
+        if isinstance(result, str):
+            self._error(client, result, 400)
+            return
+        self._save_auth_config()
+        self._log.info("User updated: %s", login)
+        client.respond({'ok': True})
+
+    def _handle_api_users_delete(self, client, user, login):
+        """Delete user"""
+        if not self._auth:
+            self._error(client, 'User not found', 404)
+            return
+        if not self._require_admin(client, user):
+            return
+        result = self._auth.delete_user(login)
+        if result is False:
+            self._error(client, 'User not found', 404)
+            return
+        if isinstance(result, str):
+            self._error(client, result, 400)
+            return
+        self._save_auth_config()
+        self._log.info("User deleted: %s", login)
         client.respond({'ok': True})
