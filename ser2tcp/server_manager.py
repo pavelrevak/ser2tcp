@@ -24,6 +24,10 @@ class ServersManager():
         """Add server"""
         self._servers.append(server)
 
+    def remove_server(self, server):
+        """Remove server"""
+        self._servers.remove(server)
+
     def process(self):
         """Process all servers"""
         read_list = []

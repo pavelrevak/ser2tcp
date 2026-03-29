@@ -10,6 +10,7 @@ import serial.tools.list_ports as _list_ports
 import uhttp.server as _uhttp_server
 
 import ser2tcp.http_auth as _http_auth
+import ser2tcp.serial_proxy as _serial_proxy
 
 HTML_DIR = _pathlib.Path(__file__).parent / 'html'
 
@@ -18,9 +19,11 @@ class HttpServerWrapper():
     """Wrapper around uhttp.HttpServer compatible with ServersManager"""
 
     def __init__(self, configs, serial_proxies, log=None,
-            config_path=None, configuration=None):
+            config_path=None, configuration=None,
+            server_manager=None):
         self._log = log if log else _logging.getLogger(__name__)
         self._serial_proxies = serial_proxies
+        self._server_manager = server_manager
         self._config_path = config_path
         self._configuration = configuration if configuration else {}
         if isinstance(configs, dict):
@@ -146,8 +149,15 @@ class HttpServerWrapper():
             return
         if client.method == 'GET' and client.path == '/api/status':
             self._handle_api_status(client)
-        elif client.method == 'GET' and client.path == '/api/ports':
-            self._handle_api_ports(client)
+        elif client.method == 'GET' and client.path == '/api/detect':
+            self._handle_api_detect(client)
+        elif client.path == '/api/ports':
+            if client.method == 'POST':
+                self._handle_api_ports_add(client, user)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path.startswith('/api/ports/'):
+            self._route_api_ports_item(client, user)
         elif client.path == '/api/users':
             if client.method == 'GET':
                 self._handle_api_users_list(client)
@@ -211,7 +221,7 @@ class HttpServerWrapper():
             ports.append(port_info)
         client.respond({'ports': ports})
 
-    def _handle_api_ports(self, client):
+    def _handle_api_detect(self, client):
         """Return list of available serial ports"""
         ports = []
         for port in _list_ports.comports():
@@ -233,6 +243,145 @@ class HttpServerWrapper():
                     info['location'] = port.location
             ports.append(info)
         client.respond(ports)
+
+    def _save_config(self):
+        """Save configuration to config file"""
+        if not self._config_path or not self._configuration:
+            return
+        with open(self._config_path, 'w', encoding='utf-8') as f:
+            _json.dump(self._configuration, f, indent=4)
+            f.write('\n')
+
+    def _get_ports_config(self):
+        """Get ports list from configuration"""
+        ports = self._configuration.get('ports', [])
+        if isinstance(self._configuration, list):
+            ports = self._configuration
+        return ports
+
+    def _route_api_ports_item(self, client, user):
+        """Route /api/ports/<index> requests"""
+        try:
+            index = int(client.path[len('/api/ports/'):])
+        except ValueError:
+            self._error(client, 'Invalid port index', 400)
+            return
+        if client.method == 'PUT':
+            self._handle_api_ports_update(client, user, index)
+        elif client.method == 'DELETE':
+            self._handle_api_ports_delete(client, user, index)
+        else:
+            self._error(client, 'Method not allowed', 405)
+
+    def _validate_port_config(self, data):
+        """Validate port configuration, return error string or None"""
+        if not isinstance(data, dict):
+            return 'Invalid request'
+        if 'serial' not in data:
+            return 'serial config required'
+        serial = data['serial']
+        if not isinstance(serial, dict):
+            return 'Invalid serial config'
+        if 'port' not in serial and 'match' not in serial:
+            return "serial config must have 'port' or 'match'"
+        if 'servers' not in data or not isinstance(data['servers'], list):
+            return 'servers list required'
+        if not data['servers']:
+            return 'At least one server required'
+        for srv in data['servers']:
+            if not isinstance(srv, dict):
+                return 'Invalid server config'
+            if 'protocol' not in srv:
+                return 'Server protocol required'
+            proto = srv['protocol'].upper()
+            if proto not in ('TCP', 'TELNET', 'SSL', 'SOCKET'):
+                return f'Unknown protocol: {srv["protocol"]}'
+            if proto == 'SOCKET':
+                if 'address' not in srv:
+                    return 'Socket path (address) required'
+            else:
+                if 'port' not in srv:
+                    return 'Server port required'
+        return None
+
+    def _create_proxy(self, config):
+        """Create SerialProxy from config"""
+        proxy = _serial_proxy.SerialProxy(config, self._log)
+        return proxy
+
+    def _handle_api_ports_add(self, client, user):
+        """Add new port configuration"""
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        error = self._validate_port_config(data)
+        if error:
+            self._error(client, error, 400)
+            return
+        try:
+            proxy = self._create_proxy(data)
+        except (ValueError, KeyError) as err:
+            self._error(client, str(err), 400)
+            return
+        self._serial_proxies.append(proxy)
+        if self._server_manager:
+            self._server_manager.add_server(proxy)
+        ports = self._get_ports_config()
+        ports.append(data)
+        if 'ports' not in self._configuration:
+            self._configuration['ports'] = ports
+        self._save_config()
+        self._log.info("Port added: %d", len(self._serial_proxies) - 1)
+        client.respond({'ok': True, 'index': len(self._serial_proxies) - 1},
+            status=201)
+
+    def _handle_api_ports_update(self, client, user, index):
+        """Update port configuration"""
+        if not self._require_admin(client, user):
+            return
+        ports = self._get_ports_config()
+        if index < 0 or index >= len(ports):
+            self._error(client, 'Port not found', 404)
+            return
+        data = client.data
+        error = self._validate_port_config(data)
+        if error:
+            self._error(client, error, 400)
+            return
+        try:
+            new_proxy = self._create_proxy(data)
+        except (ValueError, KeyError) as err:
+            self._error(client, str(err), 400)
+            return
+        # Replace old proxy
+        old_proxy = self._serial_proxies[index]
+        old_proxy.close()
+        if self._server_manager:
+            self._server_manager.remove_server(old_proxy)
+            self._server_manager.add_server(new_proxy)
+        self._serial_proxies[index] = new_proxy
+        ports[index] = data
+        self._save_config()
+        self._log.info("Port updated: %d", index)
+        client.respond({'ok': True})
+
+    def _handle_api_ports_delete(self, client, user, index):
+        """Delete port configuration"""
+        if not self._require_admin(client, user):
+            return
+        ports = self._get_ports_config()
+        if index < 0 or index >= len(ports):
+            self._error(client, 'Port not found', 404)
+            return
+        old_proxy = self._serial_proxies[index]
+        old_proxy.close()
+        if self._server_manager:
+            self._server_manager.remove_server(old_proxy)
+        del self._serial_proxies[index]
+        del ports[index]
+        self._save_config()
+        self._log.info("Port deleted: %d", index)
+        client.respond({'ok': True})
 
     def _handle_api_login(self, client):
         """Authenticate user and return session token"""
@@ -297,9 +446,7 @@ class HttpServerWrapper():
             http_configs = [http_configs]
         for config in http_configs:
             config.pop('auth', None)
-        with open(self._config_path, 'w', encoding='utf-8') as f:
-            _json.dump(self._configuration, f, indent=4)
-            f.write('\n')
+        self._save_config()
 
     def _handle_api_users_list(self, client):
         """List users (without passwords)"""

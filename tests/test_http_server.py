@@ -54,9 +54,9 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(client.respond_status, 200)
         self.assertIn('ports', client.responded)
 
-    def test_api_ports_no_auth(self):
+    def test_api_detect_no_auth(self):
         wrapper = make_wrapper()
-        client = MockClient(path='/api/ports')
+        client = MockClient(path='/api/detect')
         with patch('ser2tcp.http_server._list_ports.comports', return_value=[]):
             wrapper._handle_request(client)
         self.assertEqual(client.respond_status, 200)
@@ -295,7 +295,7 @@ class TestApiStatus(unittest.TestCase):
         self.assertEqual(srv['address'], '/tmp/s.sock')
 
 
-class TestApiPorts(unittest.TestCase):
+class TestApiDetect(unittest.TestCase):
     def _make_port_info(self, device='/dev/ttyUSB0', vid=None, pid=None,
             serial_number=None, manufacturer=None, product=None,
             location=None, description=None, hwid=None):
@@ -313,7 +313,7 @@ class TestApiPorts(unittest.TestCase):
 
     def test_empty(self):
         wrapper = make_wrapper()
-        client = MockClient(path='/api/ports')
+        client = MockClient(path='/api/detect')
         with patch('ser2tcp.http_server._list_ports.comports',
                 return_value=[]):
             wrapper._handle_request(client)
@@ -325,7 +325,7 @@ class TestApiPorts(unittest.TestCase):
             serial_number='abc', manufacturer='Espressif',
             product='ESP32', location='1-1')
         wrapper = make_wrapper()
-        client = MockClient(path='/api/ports')
+        client = MockClient(path='/api/detect')
         with patch('ser2tcp.http_server._list_ports.comports',
                 return_value=[port]):
             wrapper._handle_request(client)
@@ -340,7 +340,7 @@ class TestApiPorts(unittest.TestCase):
         port = self._make_port_info(
             device='/dev/ttyS0', description='n/a', hwid='n/a')
         wrapper = make_wrapper()
-        client = MockClient(path='/api/ports')
+        client = MockClient(path='/api/detect')
         with patch('ser2tcp.http_server._list_ports.comports',
                 return_value=[port]):
             wrapper._handle_request(client)
@@ -353,7 +353,7 @@ class TestApiPorts(unittest.TestCase):
     def test_description_shown_when_not_na(self):
         port = self._make_port_info(description='USB Serial Port')
         wrapper = make_wrapper()
-        client = MockClient(path='/api/ports')
+        client = MockClient(path='/api/detect')
         with patch('ser2tcp.http_server._list_ports.comports',
                 return_value=[port]):
             wrapper._handle_request(client)
@@ -539,6 +539,265 @@ class TestApiUsers(unittest.TestCase):
             data={'login': 'admin', 'password': 'pass', 'admin': True})
         wrapper._handle_request(client)
         self.assertEqual(client.respond_status, 201)
+
+
+class TestApiPortsCrud(unittest.TestCase):
+    """Tests for port configuration CRUD API"""
+
+    def _auth_config(self):
+        return {
+            'users': [{
+                'login': 'admin',
+                'password': hash_password('secret'),
+                'admin': True,
+            }],
+        }
+
+    def _admin_token(self, wrapper):
+        client = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'admin', 'password': 'secret'})
+        wrapper._handle_request(client)
+        return client.responded['token']
+
+    def _auth_client(self, token, method='GET', path='/', data=None):
+        return MockClient(
+            method=method, path=path, data=data,
+            headers={'authorization': f'Bearer {token}'})
+
+    def _port_config(self, port='/dev/ttyUSB0', baudrate=115200,
+            protocol='tcp', address='0.0.0.0', srv_port=10001):
+        cfg = {
+            'serial': {'port': port, 'baudrate': baudrate},
+            'servers': [{'protocol': protocol, 'address': address,
+                'port': srv_port}],
+        }
+        return cfg
+
+    def _make_wrapper_with_ports(self, port_configs=None):
+        auth = self._auth_config()
+        configuration = {
+            'http': [{'address': '127.0.0.1', 'port': 0}],
+            'users': auth['users'],
+            'ports': port_configs or [],
+        }
+        proxies = []
+        if port_configs:
+            for cfg in port_configs:
+                proxy = Mock()
+                proxy.serial_config = cfg['serial']
+                proxy.match = cfg['serial'].get('match')
+                proxy.is_connected = False
+                proxy.servers = []
+                proxy.close = Mock()
+                proxies.append(proxy)
+        manager = Mock()
+        with patch('ser2tcp.http_server._uhttp_server.HttpServer'):
+            wrapper = HttpServerWrapper(
+                {'address': '127.0.0.1', 'port': 0}, proxies,
+                log=Mock(), configuration=configuration,
+                server_manager=manager)
+        return wrapper, manager
+
+    def test_add_port(self):
+        wrapper, manager = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = self._port_config()
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='POST', path='/api/ports', data=cfg)
+            wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+        self.assertEqual(client.responded['index'], 0)
+        manager.add_server.assert_called_once()
+
+    def test_add_port_missing_serial(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/ports',
+            data={'servers': [{'protocol': 'tcp', 'port': 10001}]})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_port_missing_servers(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/ports',
+            data={'serial': {'port': '/dev/ttyUSB0'}})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_port_empty_servers(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='POST', path='/api/ports',
+            data={'serial': {'port': '/dev/ttyUSB0'}, 'servers': []})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_port_unknown_protocol(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = self._port_config()
+        cfg['servers'][0]['protocol'] = 'unknown'
+        client = self._auth_client(
+            token, method='POST', path='/api/ports', data=cfg)
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_add_port_socket_no_port_needed(self):
+        wrapper, manager = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{'protocol': 'socket', 'address': '/tmp/s.sock'}],
+        }
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='POST', path='/api/ports', data=cfg)
+            wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+
+    def test_add_port_tcp_missing_port(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{'protocol': 'tcp', 'address': '0.0.0.0'}],
+        }
+        client = self._auth_client(
+            token, method='POST', path='/api/ports', data=cfg)
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_update_port(self):
+        cfg = self._port_config()
+        wrapper, manager = self._make_wrapper_with_ports([cfg])
+        token = self._admin_token(wrapper)
+        new_cfg = self._port_config(baudrate=9600)
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='PUT', path='/api/ports/0', data=new_cfg)
+            wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        manager.remove_server.assert_called_once()
+        manager.add_server.assert_called_once()
+
+    def test_update_port_not_found(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = self._port_config()
+        client = self._auth_client(
+            token, method='PUT', path='/api/ports/0', data=cfg)
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_update_port_invalid_index(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='PUT', path='/api/ports/abc', data={})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+    def test_delete_port(self):
+        cfg = self._port_config()
+        wrapper, manager = self._make_wrapper_with_ports([cfg])
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='DELETE', path='/api/ports/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        manager.remove_server.assert_called_once()
+        self.assertEqual(len(wrapper._serial_proxies), 0)
+
+    def test_delete_port_not_found(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='DELETE', path='/api/ports/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_add_port_non_admin(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        wrapper._auth.add_user('viewer', 'pass')
+        login = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'viewer', 'password': 'pass'})
+        wrapper._handle_request(login)
+        token = login.responded['token']
+        cfg = self._port_config()
+        client = self._auth_client(
+            token, method='POST', path='/api/ports', data=cfg)
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 403)
+
+    def test_add_port_with_match(self):
+        wrapper, manager = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'match': {'vid': '0x303A'}, 'baudrate': 115200},
+            'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                'port': 10001}],
+        }
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='POST', path='/api/ports', data=cfg)
+            wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+
+    def test_config_saved_after_add(self):
+        wrapper, _ = self._make_wrapper_with_ports()
+        token = self._admin_token(wrapper)
+        cfg = self._port_config()
+        with patch.object(wrapper, '_create_proxy') as mock_create, \
+                patch.object(wrapper, '_save_config') as mock_save:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='POST', path='/api/ports', data=cfg)
+            wrapper._handle_request(client)
+        mock_save.assert_called_once()
+
+    def test_config_saved_after_delete(self):
+        cfg = self._port_config()
+        wrapper, _ = self._make_wrapper_with_ports([cfg])
+        token = self._admin_token(wrapper)
+        with patch.object(wrapper, '_save_config') as mock_save:
+            client = self._auth_client(
+                token, method='DELETE', path='/api/ports/0')
+            wrapper._handle_request(client)
+        mock_save.assert_called_once()
+
+    def test_old_proxy_closed_on_update(self):
+        cfg = self._port_config()
+        wrapper, _ = self._make_wrapper_with_ports([cfg])
+        old_proxy = wrapper._serial_proxies[0]
+        token = self._admin_token(wrapper)
+        new_cfg = self._port_config(baudrate=9600)
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = self._auth_client(
+                token, method='PUT', path='/api/ports/0', data=new_cfg)
+            wrapper._handle_request(client)
+        old_proxy.close.assert_called_once()
+
+    def test_old_proxy_closed_on_delete(self):
+        cfg = self._port_config()
+        wrapper, _ = self._make_wrapper_with_ports([cfg])
+        old_proxy = wrapper._serial_proxies[0]
+        token = self._admin_token(wrapper)
+        client = self._auth_client(
+            token, method='DELETE', path='/api/ports/0')
+        wrapper._handle_request(client)
+        old_proxy.close.assert_called_once()
 
 
 class TestConfigVariants(unittest.TestCase):

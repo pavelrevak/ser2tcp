@@ -108,7 +108,8 @@ def main():
         import ser2tcp.http_server as _http_server
         http_server = _http_server.HttpServerWrapper(
             configuration['http'], serial_proxies, log,
-            config_path=args.config, configuration=configuration)
+            config_path=args.config, configuration=configuration,
+            server_manager=servers_manager)
         servers_manager.add_server(http_server)
 
     _signal.signal(_signal.SIGTERM, servers_manager.stop)
