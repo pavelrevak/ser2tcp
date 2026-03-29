@@ -11,6 +11,7 @@ import serial.tools.list_ports as _list_ports
 
 import ser2tcp.connection_control as _control
 import ser2tcp.server as _server
+import ser2tcp.server_websocket as _server_websocket
 
 
 class SerialProxy():
@@ -59,7 +60,14 @@ class SerialProxy():
         else:
             self._log.info("Serial: %s", name)
         for server_config in config['servers']:
-            self._servers.append(_server.Server(server_config, self, log))
+            proto = server_config.get('protocol', '').upper()
+            if proto == 'WEBSOCKET':
+                self._servers.append(
+                    _server_websocket.ServerWebSocket(
+                        server_config, self, log))
+            else:
+                self._servers.append(
+                    _server.Server(server_config, self, log))
         # Detect control-enabled servers and set poll interval
         for server in self._servers:
             if server.control:

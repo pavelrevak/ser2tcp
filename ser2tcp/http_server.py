@@ -9,6 +9,8 @@ import serial.tools.list_ports as _list_ports
 
 import uhttp.server as _uhttp_server
 
+import uhttp.server as _uhttp_events
+
 import ser2tcp.http_auth as _http_auth
 import ser2tcp.connection_control as _control
 import ser2tcp.serial_proxy as _serial_proxy
@@ -46,6 +48,7 @@ class HttpServerWrapper():
                     auth_config = config['auth']
                     break
         self._auth = _http_auth.SessionManager(auth_config) if auth_config else None
+        self._ws_clients = {}  # uhttp client -> ServerWebSocket
         self._servers = []
         for config in configs:
             address = config.get('address', '0.0.0.0')
@@ -83,7 +86,22 @@ class HttpServerWrapper():
         for server in self._servers:
             client = server.process_events(read_sockets, [])
             if client:
-                self._handle_request(client)
+                if client.event == _uhttp_events.EVENT_WS_REQUEST:
+                    self._handle_ws_upgrade(client)
+                elif client.event in (
+                        _uhttp_events.EVENT_WS_MESSAGE,
+                        _uhttp_events.EVENT_WS_CHUNK_FIRST,
+                        _uhttp_events.EVENT_WS_CHUNK_NEXT,
+                        _uhttp_events.EVENT_WS_CHUNK_LAST):
+                    ws_server = self._ws_clients.get(client)
+                    if ws_server:
+                        ws_server.process_message(client)
+                elif client.event == _uhttp_events.EVENT_WS_CLOSE:
+                    ws_server = self._ws_clients.pop(client, None)
+                    if ws_server:
+                        ws_server.remove_connection(client)
+                else:
+                    self._handle_request(client)
 
     def process_write(self, write_sockets):
         """Process write events"""
@@ -100,6 +118,49 @@ class HttpServerWrapper():
         """Close all HTTP servers"""
         for server in self._servers:
             server.close()
+
+    def _get_ws_endpoints(self):
+        """Build mapping of endpoint name -> ServerWebSocket"""
+        endpoints = {}
+        for proxy in self._serial_proxies:
+            for server in proxy.servers:
+                if server.protocol == 'WEBSOCKET':
+                    endpoints[server.endpoint] = server
+        return endpoints
+
+    def _handle_ws_upgrade(self, client):
+        """Handle WebSocket upgrade request"""
+        path = client.path
+        if not path.startswith('/ws/'):
+            client.respond({'error': 'Not found'}, status=404)
+            return
+        endpoint_name = path[4:]
+        endpoints = self._get_ws_endpoints()
+        ws_server = endpoints.get(endpoint_name)
+        if not ws_server:
+            client.respond({'error': 'Not found'}, status=404)
+            return
+        # Auth: per-server token or global auth
+        if ws_server.token:
+            token = self._get_bearer_token(client)
+            if token != ws_server.token:
+                client.respond(
+                    {'error': 'Authorization required'}, status=401)
+                return
+        elif self._auth and not self._auth.is_empty:
+            token = self._get_bearer_token(client)
+            if not token:
+                client.respond(
+                    {'error': 'Authorization required'}, status=401)
+                return
+            user = self._auth.authenticate(token)
+            if not user:
+                client.respond(
+                    {'error': 'Invalid or expired token'}, status=401)
+                return
+        client.accept_websocket()
+        self._ws_clients[client] = ws_server
+        ws_server.add_connection(client)
 
     def _get_bearer_token(self, client):
         """Extract token from Authorization header or query parameter"""
@@ -213,18 +274,38 @@ class HttpServerWrapper():
                 port_info['serial']['match'] = proxy.match
             servers = []
             for server in proxy.servers:
-                srv_info = {
-                    'protocol': server.protocol,
-                    'address': server.config['address'],
-                    'connections': [
-                        {'address': con.address_str()}
-                        for con in server.connections
-                    ],
-                }
-                if server.protocol != 'SOCKET':
-                    srv_info['port'] = server.config['port']
-                if 'ssl' in server.config:
-                    srv_info['ssl'] = server.config['ssl']
+                if server.protocol == 'WEBSOCKET':
+                    srv_info = {
+                        'protocol': server.protocol,
+                        'endpoint': server.endpoint,
+                        'data': server.data_enabled,
+                        'connections': [],
+                    }
+                    for con in server.connections:
+                        try:
+                            addr = con.addr
+                            if isinstance(addr, tuple) and len(addr) >= 2:
+                                srv_info['connections'].append(
+                                    {'address': '%s:%d' % (addr[0], addr[1])})
+                            else:
+                                srv_info['connections'].append(
+                                    {'address': str(addr)})
+                        except Exception:
+                            srv_info['connections'].append(
+                                {'address': 'unknown'})
+                else:
+                    srv_info = {
+                        'protocol': server.protocol,
+                        'address': server.config['address'],
+                        'connections': [
+                            {'address': con.address_str()}
+                            for con in server.connections
+                        ],
+                    }
+                    if server.protocol != 'SOCKET':
+                        srv_info['port'] = server.config['port']
+                    if 'ssl' in server.config:
+                        srv_info['ssl'] = server.config['ssl']
                 if server.control:
                     srv_info['control'] = server.control
                 servers.append(srv_info)
@@ -346,9 +427,14 @@ class HttpServerWrapper():
             if 'protocol' not in srv:
                 return 'Server protocol required'
             proto = srv['protocol'].upper()
-            if proto not in ('TCP', 'TELNET', 'SSL', 'SOCKET'):
+            if proto not in ('TCP', 'TELNET', 'SSL', 'SOCKET', 'WEBSOCKET'):
                 return f'Unknown protocol: {srv["protocol"]}'
-            if proto == 'SOCKET':
+            if proto == 'WEBSOCKET':
+                if 'endpoint' not in srv:
+                    return 'WebSocket endpoint required'
+                if not srv.get('data', True) and 'control' not in srv:
+                    return '"data": false requires "control" config'
+            elif proto == 'SOCKET':
                 if 'address' not in srv:
                     return 'Socket path (address) required'
             else:

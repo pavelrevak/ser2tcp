@@ -1,0 +1,212 @@
+"""WebSocket virtual server - manages WS connections through HTTP server"""
+
+import json as _json
+import logging as _logging
+
+import ser2tcp.connection_control as _control
+import ser2tcp.server as _server
+
+
+class ServerWebSocket():
+    """WebSocket virtual server for one endpoint.
+
+    Not a real listener - connections come from HttpServerWrapper
+    when a WebSocket upgrade request matches this endpoint.
+    """
+
+    def __init__(self, config, ser, log=None):
+        self._log = log if log else _logging.Logger(self.__class__.__name__)
+        self._config = config
+        self._serial = ser
+        self._protocol = 'WEBSOCKET'
+        self._endpoint = config.get('endpoint')
+        if not self._endpoint:
+            raise _server.ConfigError(
+                'WebSocket server requires endpoint')
+        self._token = config.get('token')
+        self._data_enabled = config.get('data', True)
+        self._control = config.get('control')
+        if not self._data_enabled and not self._control:
+            raise _server.ConfigError(
+                'WebSocket "data": false requires "control" config')
+        # Parse control config
+        self._ctl_rts = False
+        self._ctl_dtr = False
+        self._ctl_signals = set()
+        if self._control:
+            self._ctl_rts = bool(self._control.get('rts'))
+            self._ctl_dtr = bool(self._control.get('dtr'))
+            signals = self._control.get('signals', [])
+            self._ctl_signals = set(s.lower() for s in signals)
+        self._connections = []
+        self._log.info(
+            "  Server: /ws/%s WEBSOCKET", self._endpoint)
+
+    @property
+    def protocol(self):
+        """Return protocol name"""
+        return self._protocol
+
+    @property
+    def config(self):
+        """Return server configuration"""
+        return self._config
+
+    @property
+    def control(self):
+        """Return control configuration or None"""
+        return self._control
+
+    @property
+    def connections(self):
+        """Return list of connections (uhttp HttpConnection objects)"""
+        return self._connections
+
+    @property
+    def endpoint(self):
+        """Return endpoint name"""
+        return self._endpoint
+
+    @property
+    def token(self):
+        """Return per-server token or None"""
+        return self._token
+
+    @property
+    def data_enabled(self):
+        """Return True if data forwarding is enabled"""
+        return self._data_enabled
+
+    def has_connections(self):
+        """True if server has active connections"""
+        return bool(self._connections)
+
+    def add_connection(self, client):
+        """Add accepted WebSocket connection"""
+        if self._serial.connect():
+            self._connections.append(client)
+            addr = self._client_addr(client)
+            self._log.info(
+                "Client connected: %s WEBSOCKET /ws/%s",
+                addr, self._endpoint)
+            if self._control:
+                self._send_signals_to(client)
+        else:
+            client.ws_close(1011, 'Serial port unavailable')
+
+    def remove_connection(self, client):
+        """Remove WebSocket connection"""
+        if client in self._connections:
+            addr = self._client_addr(client)
+            self._connections.remove(client)
+            self._log.info(
+                "Client disconnected: %s WEBSOCKET", addr)
+            self._serial.disconnect()
+
+    def process_message(self, client):
+        """Process incoming WebSocket message"""
+        msg = client.ws_message
+        if isinstance(msg, bytes) and self._data_enabled:
+            self._serial.send(msg)
+        elif isinstance(msg, str) and self._control:
+            self._process_control_message(client, msg)
+
+    def _process_control_message(self, client, msg):
+        """Process JSON control message from client"""
+        try:
+            data = _json.loads(msg)
+        except (ValueError, TypeError):
+            self._log.warning("Invalid JSON control message")
+            return
+        if not isinstance(data, dict):
+            return
+        if 'rts' in data and self._ctl_rts:
+            self._serial.set_rts(bool(data['rts']))
+        if 'dtr' in data and self._ctl_dtr:
+            self._serial.set_dtr(bool(data['dtr']))
+
+    # Socket interface - no-ops, uhttp owns these sockets
+
+    def read_sockets(self):
+        """Return empty list - uhttp manages WS sockets"""
+        return []
+
+    def write_sockets(self):
+        """Return empty list - uhttp manages WS buffering"""
+        return []
+
+    def process_read(self, read_sockets):
+        """No-op - uhttp handles WS reads"""
+
+    def process_write(self, write_sockets):
+        """No-op - uhttp handles WS writes"""
+
+    def process_stale(self):
+        """Remove closed connections"""
+        for client in list(self._connections):
+            if not client.is_websocket:
+                self.remove_connection(client)
+
+    def send(self, data):
+        """Send serial data to all connections as binary frames"""
+        if not self._data_enabled:
+            return
+        for client in list(self._connections):
+            try:
+                client.ws_send(data)
+            except OSError:
+                self.remove_connection(client)
+
+    def send_signal_report(self, bitmask):
+        """Send signal report to all connections as JSON text frame"""
+        if not self._control:
+            return
+        msg = self._bitmask_to_json(bitmask)
+        text = _json.dumps(msg)
+        for client in list(self._connections):
+            try:
+                client.ws_send(text)
+            except OSError:
+                self.remove_connection(client)
+
+    def close_connections(self):
+        """Close all WebSocket connections"""
+        while self._connections:
+            client = self._connections.pop()
+            try:
+                client.ws_close(1001, 'Server shutting down')
+            except OSError:
+                pass
+        self._serial.disconnect()
+
+    def close(self):
+        """Close all connections"""
+        self.close_connections()
+
+    def _send_signals_to(self, client):
+        """Send current signal state to a single client"""
+        bitmask = self._serial.get_signals()
+        msg = self._bitmask_to_json(bitmask)
+        try:
+            client.ws_send(_json.dumps(msg))
+        except OSError:
+            pass
+
+    def _bitmask_to_json(self, bitmask):
+        """Convert signal bitmask to JSON dict filtered by config"""
+        signals = {}
+        for name in self._ctl_signals:
+            bit = _control.SIGNAL_BITS.get(name)
+            if bit is not None:
+                signals[name] = bool(bitmask & (1 << bit))
+        return {'signals': signals}
+
+    def _client_addr(self, client):
+        """Return formatted client address string"""
+        try:
+            addr = client.addr
+            if isinstance(addr, tuple) and len(addr) >= 2:
+                return "%s:%d" % (addr[0], addr[1])
+            return str(addr)
+        except Exception:
+            return 'unknown'
