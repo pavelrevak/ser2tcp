@@ -42,11 +42,12 @@ class SerialProxy():
         self._reader_sock_w = None
         self._reader_running = False
         self._servers = []
+        self._name = config.get('name', '')
         self._match = config['serial'].get('match')
         self._serial_config = self._init_serial_config(config['serial'])
         port = self._serial_config.get('port')
         baudrate = self._serial_config.get('baudrate')
-        name = port if port else f"match:{self._match}"
+        name = self._name or port or f"match:{self._match}"
         if baudrate:
             self._log.info("Serial: %s %d", name, baudrate)
         else:
@@ -147,6 +148,11 @@ class SerialProxy():
         self._reader_thread = None
         self._reader_sock_r = None
         self._reader_sock_w = None
+
+    @property
+    def name(self):
+        """Return port name"""
+        return self._name
 
     @property
     def serial_config(self):

@@ -11,6 +11,7 @@ import uhttp.server as _uhttp_server
 
 import ser2tcp.http_auth as _http_auth
 import ser2tcp.serial_proxy as _serial_proxy
+import ser2tcp.server as _server
 
 HTML_DIR = _pathlib.Path(__file__).parent / 'html'
 
@@ -199,9 +200,12 @@ class HttpServerWrapper():
                 'port': serial_cfg.get('port'),
                 'connected': proxy.is_connected,
             }
-            if 'baudrate' in serial_cfg:
-                serial_info['baudrate'] = serial_cfg['baudrate']
+            for key in ('baudrate', 'bytesize', 'parity', 'stopbits'):
+                if key in serial_cfg:
+                    serial_info[key] = serial_cfg[key]
             port_info = {'serial': serial_info}
+            if proxy.name:
+                port_info['name'] = proxy.name
             if proxy.match:
                 port_info['serial']['match'] = proxy.match
             servers = []
@@ -216,6 +220,8 @@ class HttpServerWrapper():
                 }
                 if server.protocol != 'SOCKET':
                     srv_info['port'] = server.config['port']
+                if 'ssl' in server.config:
+                    srv_info['ssl'] = server.config['ssl']
                 servers.append(srv_info)
             port_info['servers'] = servers
             ports.append(port_info)
@@ -320,7 +326,7 @@ class HttpServerWrapper():
             return
         try:
             proxy = self._create_proxy(data)
-        except (ValueError, KeyError) as err:
+        except (ValueError, KeyError, OSError, _server.ConfigError) as err:
             self._error(client, str(err), 400)
             return
         self._serial_proxies.append(proxy)
@@ -348,16 +354,25 @@ class HttpServerWrapper():
         if error:
             self._error(client, error, 400)
             return
-        try:
-            new_proxy = self._create_proxy(data)
-        except (ValueError, KeyError) as err:
-            self._error(client, str(err), 400)
-            return
-        # Replace old proxy
+        # Close old proxy first to release ports
         old_proxy = self._serial_proxies[index]
         old_proxy.close()
         if self._server_manager:
             self._server_manager.remove_server(old_proxy)
+        try:
+            new_proxy = self._create_proxy(data)
+        except (ValueError, KeyError, OSError, _server.ConfigError) as err:
+            # Rollback: recreate old proxy
+            try:
+                old_proxy = self._create_proxy(ports[index])
+                self._serial_proxies[index] = old_proxy
+                if self._server_manager:
+                    self._server_manager.add_server(old_proxy)
+            except Exception:
+                pass
+            self._error(client, str(err), 400)
+            return
+        if self._server_manager:
             self._server_manager.add_server(new_proxy)
         self._serial_proxies[index] = new_proxy
         ports[index] = data

@@ -100,7 +100,11 @@ def main():
     servers_manager = _server_manager.ServersManager()
     serial_proxies = []
     for config in ports:
-        proxy = _serial_proxy.SerialProxy(config, log)
+        try:
+            proxy = _serial_proxy.SerialProxy(config, log)
+        except Exception as err:
+            log.error("Failed to create port: %s", err)
+            continue
         serial_proxies.append(proxy)
         servers_manager.add_server(proxy)
 

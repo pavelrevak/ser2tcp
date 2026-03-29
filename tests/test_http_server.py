@@ -216,24 +216,35 @@ class TestAuth(unittest.TestCase):
 
 class TestApiStatus(unittest.TestCase):
     def _make_proxy(self, port=None, baudrate=None, match=None,
-            connected=False, servers=None):
+            connected=False, servers=None, name='',
+            bytesize=None, parity=None, stopbits=None):
         proxy = Mock()
         cfg = {}
         if port:
             cfg['port'] = port
         if baudrate:
             cfg['baudrate'] = baudrate
+        if bytesize:
+            cfg['bytesize'] = bytesize
+        if parity:
+            cfg['parity'] = parity
+        if stopbits:
+            cfg['stopbits'] = stopbits
         proxy.serial_config = cfg
         proxy.match = match
+        proxy.name = name
         proxy.is_connected = connected
         proxy.servers = servers or []
         return proxy
 
     def _make_server(self, protocol='TCP', address='0.0.0.0', port=21000,
-            connections=None):
+            connections=None, ssl=None):
         server = Mock()
         server.protocol = protocol
-        server.config = {'address': address, 'port': port}
+        config = {'address': address, 'port': port}
+        if ssl:
+            config['ssl'] = ssl
+        server.config = config
         server.connections = connections or []
         return server
 
@@ -293,6 +304,54 @@ class TestApiStatus(unittest.TestCase):
         srv = client.responded['ports'][0]['servers'][0]
         self.assertNotIn('port', srv)
         self.assertEqual(srv['address'], '/tmp/s.sock')
+
+    def test_proxy_with_name(self):
+        proxy = self._make_proxy(port='/dev/ttyUSB0', name='gate2a')
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        self.assertEqual(client.responded['ports'][0]['name'], 'gate2a')
+
+    def test_proxy_without_name(self):
+        proxy = self._make_proxy(port='/dev/ttyUSB0')
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        self.assertNotIn('name', client.responded['ports'][0])
+
+    def test_serial_params_in_status(self):
+        proxy = self._make_proxy(
+            port='/dev/ttyUSB0', baudrate=115200,
+            bytesize='SEVENBITS', parity='EVEN', stopbits='TWO')
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        serial = client.responded['ports'][0]['serial']
+        self.assertEqual(serial['bytesize'], 'SEVENBITS')
+        self.assertEqual(serial['parity'], 'EVEN')
+        self.assertEqual(serial['stopbits'], 'TWO')
+
+    def test_ssl_config_in_status(self):
+        ssl_cfg = {'certfile': 'server.crt', 'keyfile': 'server.key'}
+        server = self._make_server(
+            protocol='SSL', port=10443, ssl=ssl_cfg)
+        proxy = self._make_proxy(
+            port='/dev/ttyUSB0', servers=[server])
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        srv = client.responded['ports'][0]['servers'][0]
+        self.assertEqual(srv['ssl'], ssl_cfg)
+
+    def test_no_ssl_config_for_tcp(self):
+        server = self._make_server(protocol='TCP')
+        proxy = self._make_proxy(
+            port='/dev/ttyUSB0', servers=[server])
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        srv = client.responded['ports'][0]['servers'][0]
+        self.assertNotIn('ssl', srv)
 
 
 class TestApiDetect(unittest.TestCase):

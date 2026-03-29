@@ -12,11 +12,13 @@ dd { margin: 0; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 0.4em 0.8em; border-bottom: 1px solid #eee; }
 th { color: #666; }
-input { padding: 0.4em; border: 1px solid #ccc; border-radius: 4px; }
+input, select { padding: 0.4em; border: 1px solid #ccc; border-radius: 4px; }
 button { padding: 0.4em 1em; border: none; border-radius: 4px;
   cursor: pointer; color: #fff; }
 .btn-primary { background: #4a9eff; }
 .btn-danger { background: #e55; }
+.btn-secondary { background: none; border: 1px solid #ccc; color: #666; }
+.btn-secondary:hover { background: #eee; }
 .btn-small { padding: 0.2em 0.6em; font-size: 0.9em; }
 .login-box { max-width: 300px; margin: 4em auto; }
 .login-box input { width: 100%; margin-bottom: 0.5em; box-sizing: border-box; }
@@ -28,6 +30,9 @@ button { padding: 0.4em 1em; border: none; border-radius: 4px;
 .badge-admin { background: #4a9eff; color: #fff; }
 .badge-on { background: #4c4; color: #fff; }
 .badge-off { background: #ccc; }
+.dot-on { color: #4c4; }
+.dot-off { color: #ccc; }
+.dot-err { color: #e55; }
 .toolbar { margin: 1em 0; }
 header { display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 1em; }
@@ -40,3 +45,42 @@ nav button { background: none; border: none; color: #4a9eff;
 nav button.active { border-bottom: 2px solid #4a9eff; font-weight: bold; }
 nav button:hover { color: #2a7edf; }
 .empty { color: #999; font-style: italic; }
+
+/* Port editor */
+.port-edit { background: #fff; padding: 1em; margin: 1em 0;
+  border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  border: 2px solid #4a9eff; }
+.port-edit h3 { margin: 0.8em 0 0.3em; color: #555; }
+.port-edit h3:first-child { margin-top: 0; }
+.field-row { display: flex; align-items: center; gap: 0.5em;
+  margin: 0.4em 0; flex-wrap: wrap; }
+.field-row label { min-width: 7em; color: #666; font-size: 0.9em; }
+.field-row input[type="text"],
+.field-row input[type="number"],
+.field-row select { flex: 1; min-width: 8em; max-width: 20em; }
+.field-row input:disabled, .field-row select:disabled {
+  background: #f0f0f0; color: #999; }
+.match-row { display: flex; align-items: center; gap: 0.5em; margin: 0.2em 0; }
+.match-row input[type="checkbox"] { margin: 0; }
+.match-row label { min-width: 7em; color: #666; font-size: 0.9em; }
+.match-row input[type="text"] { flex: 1; max-width: 16em; }
+.match-preview { color: #999; font-size: 0.85em; margin: 0.5em 0;
+  font-style: italic; }
+.server-box { background: #f8f8f8; padding: 0.8em; margin: 0.5em 0;
+  border-radius: 6px; border: 1px solid #e0e0e0; position: relative; }
+.server-box .btn-remove { position: absolute; top: 0.5em; right: 0.5em;
+  background: none; color: #c00; font-size: 1.2em; padding: 0 0.4em;
+  border: none; }
+.server-box .btn-remove:disabled { color: #ccc; cursor: default; }
+.edit-actions { display: flex; gap: 0.5em; margin-top: 1em; }
+.edit-actions .spacer { flex: 1; }
+.btn-edit { position: absolute; top: 1em; right: 1em; background: none;
+  border: none; color: #999; padding: 0.2em; cursor: pointer; }
+.btn-edit:hover { color: #4a9eff; }
+.section { position: relative; }
+.port-config-detail { color: #999; font-size: 0.85em; margin: 0.2em 0; }
+.detected-section { margin-top: 2em; padding-top: 1em;
+  border-top: 1px solid #ddd; }
+.detected-section h3 { color: #888; margin: 0 0 0.5em; }
+.detect-link { color: #4a9eff; text-decoration: none; cursor: pointer; }
+.detect-link:hover { text-decoration: underline; }

@@ -27,13 +27,17 @@
     </div>
   </header>
   <nav>
-    <button class="active" data-tab="status">Status</button>
-    <button data-tab="ports">Available ports</button>
+    <button class="active" data-tab="ports">Ports</button>
     <button data-tab="users">Users</button>
   </nav>
 
-  <div id="tab-status"><div id="status-content"></div></div>
-  <div id="tab-ports" class="hidden"><div id="ports-content"></div></div>
+  <div id="tab-ports">
+    <div id="ports-content"></div>
+    <div id="ports-actions" class="toolbar">
+      <button class="btn-primary" id="add-port-btn">+ Add Port</button>
+    </div>
+    <div id="detected-ports"></div>
+  </div>
   <div id="tab-users" class="hidden">
     <div id="users-content"></div>
     <div class="toolbar">

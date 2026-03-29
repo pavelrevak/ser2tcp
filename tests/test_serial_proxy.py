@@ -227,6 +227,37 @@ class TestInitSerialConfigMatch(unittest.TestCase):
         self.assertEqual(result['baudrate'], 115200)
 
 
+class TestSerialProxyName(unittest.TestCase):
+    """Test port name property"""
+
+    @patch('ser2tcp.serial_proxy._server.Server')
+    def test_name_from_config(self, _mock_server):
+        proxy = SerialProxy(
+            {'name': 'gate2a', 'serial': {'port': '/dev/ttyUSB0'},
+             'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                 'port': 10001}]})
+        self.assertEqual(proxy.name, 'gate2a')
+
+    @patch('ser2tcp.serial_proxy._server.Server')
+    def test_name_default_empty(self, _mock_server):
+        proxy = SerialProxy(
+            {'serial': {'port': '/dev/ttyUSB0'},
+             'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                 'port': 10001}]})
+        self.assertEqual(proxy.name, '')
+
+    @patch('ser2tcp.serial_proxy._server.Server')
+    def test_name_used_in_log(self, _mock_server):
+        from unittest.mock import Mock
+        log = Mock()
+        proxy = SerialProxy(
+            {'name': 'mydev', 'serial': {'port': '/dev/ttyUSB0'},
+             'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                 'port': 10001}]},
+            log=log)
+        log.info.assert_any_call("Serial: %s", 'mydev')
+
+
 class TestSerialReaderThread(unittest.TestCase):
     """Test reader thread for platforms without fileno() support"""
 
