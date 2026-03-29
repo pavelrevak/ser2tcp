@@ -21,6 +21,7 @@ let token = localStorage.getItem('ser2tcp_token');
 let username = localStorage.getItem('ser2tcp_user');
 let detectedPorts = [];
 let usedPorts = [];  // [{address, port, index}] from status
+let usedEndpoints = [];  // [{endpoint, index}] from status
 
 function setCredentials(t, u) {
   token = t;
@@ -122,7 +123,7 @@ function switchTab(tab, data) {
 const MATCH_ATTRS = [
   'vid', 'pid', 'serial_number', 'manufacturer', 'product', 'location'
 ];
-const PROTOCOLS = ['TCP', 'TELNET', 'SSL', 'SOCKET'];
+const PROTOCOLS = ['TCP', 'TELNET', 'SSL', 'SOCKET', 'WEBSOCKET'];
 const CONTROL_SIGNALS = ['rts', 'dtr', 'cts', 'dsr', 'ri', 'cd'];
 const BAUDRATES = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200,
   230400, 460800, 921600];
@@ -135,9 +136,11 @@ function loadPorts(statusData) {
   const render = (status, detected) => {
     detectedPorts = detected || [];
     usedPorts = [];
+    usedEndpoints = [];
     status.ports.forEach((p, i) => {
       (p.servers || []).forEach(s => {
         if (s.port) usedPorts.push({address: s.address, port: s.port, index: i});
+        if (s.endpoint) usedEndpoints.push({endpoint: s.endpoint, index: i});
       });
     });
     root.replaceChildren();
@@ -256,9 +259,25 @@ function renderPortCard(port, index) {
   const ul = el('ul');
   (port.servers || []).forEach((s, si) => {
     const proto = (s.protocol || 'tcp').toUpperCase();
-    const addr = proto === 'SOCKET' ? s.address : s.address + ':' + s.port;
+    const addr = proto === 'WEBSOCKET' ? '/ws/' + s.endpoint
+      : proto === 'SOCKET' ? s.address : s.address + ':' + s.port;
     const li = el('li');
     li.appendChild(document.createTextNode(proto + ' \u2014 ' + addr));
+    if (proto === 'WEBSOCKET') {
+      const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = scheme + '//' + location.host + '/ws/' + s.endpoint;
+      const urlEl = el('div', wsUrl, 'port-config-detail');
+      urlEl.style.cursor = 'pointer';
+      urlEl.title = 'Click to copy';
+      urlEl.onclick = () => {
+        navigator.clipboard.writeText(wsUrl);
+        urlEl.textContent = 'Copied!';
+        setTimeout(() => { urlEl.textContent = wsUrl; }, 1000);
+      };
+      li.appendChild(urlEl);
+      if (s.data === false)
+        li.appendChild(el('div', 'control only', 'control-signals'));
+    }
     if (s.control) {
       const parts = [];
       if (s.control.rts) parts.push('RTS');
@@ -404,12 +423,16 @@ function buildConfigFromStatus(port) {
   if (ser.parity) config.serial.parity = ser.parity;
   if (ser.stopbits) config.serial.stopbits = ser.stopbits;
   config.servers = (port.servers || []).map(s => {
-    const srv = {
-      protocol: s.protocol.toLowerCase(),
-      address: s.address,
-    };
-    if (s.port !== undefined) srv.port = s.port;
-    if (s.ssl) srv.ssl = s.ssl;
+    const srv = {protocol: s.protocol.toLowerCase()};
+    if (s.protocol === 'WEBSOCKET') {
+      if (s.endpoint) srv.endpoint = s.endpoint;
+      if (s.data === false) srv.data = false;
+      if (s.token) srv.token = s.token;
+    } else {
+      srv.address = s.address;
+      if (s.port !== undefined) srv.port = s.port;
+      if (s.ssl) srv.ssl = s.ssl;
+    }
     if (s.control) srv.control = s.control;
     return srv;
   });
@@ -697,6 +720,40 @@ function renderServerBox(srv, index, total) {
   protoRow.appendChild(protoSel);
   box.appendChild(protoRow);
 
+  // WebSocket fields
+  const wsDiv = el('div');
+  wsDiv.className = 'srv-ws-fields';
+  const wsRow1 = el('div', null, 'field-row');
+  wsRow1.appendChild(el('label', 'Endpoint:'));
+  const wsEndpoint = document.createElement('input');
+  wsEndpoint.type = 'text';
+  wsEndpoint.className = 'srv-endpoint';
+  wsEndpoint.placeholder = 'my-device';
+  wsEndpoint.value = srv.endpoint || '';
+  wsRow1.appendChild(wsEndpoint);
+  wsDiv.appendChild(wsRow1);
+  const wsRow2 = el('div', null, 'field-row');
+  wsRow2.appendChild(el('label', 'Token:'));
+  const wsToken = document.createElement('input');
+  wsToken.type = 'text';
+  wsToken.className = 'srv-token';
+  wsToken.placeholder = '(use global auth)';
+  wsToken.value = srv.token || '';
+  wsRow2.appendChild(wsToken);
+  wsDiv.appendChild(wsRow2);
+  const wsRow3 = el('div', null, 'field-row');
+  const wsDataLbl = document.createElement('label');
+  wsDataLbl.className = 'ctl-signal-label';
+  const wsDataCb = document.createElement('input');
+  wsDataCb.type = 'checkbox';
+  wsDataCb.className = 'srv-data';
+  wsDataCb.checked = srv.data !== false;
+  wsDataLbl.appendChild(wsDataCb);
+  wsDataLbl.appendChild(document.createTextNode(' Forward serial data'));
+  wsRow3.appendChild(wsDataLbl);
+  wsDiv.appendChild(wsRow3);
+  box.appendChild(wsDiv);
+
   // Address + Port (or Path for SOCKET)
   const addrRow = el('div', null, 'field-row');
   const addrLabel = el('label', 'Address:');
@@ -832,6 +889,9 @@ function renderServerBox(srv, index, total) {
     const isSocket = proto === 'SOCKET';
     const isSsl = proto === 'SSL';
     const isTelnet = proto === 'TELNET';
+    const isWs = proto === 'WEBSOCKET';
+    wsDiv.classList.toggle('hidden', !isWs);
+    addrRow.classList.toggle('hidden', isWs);
     addrLabel.textContent = isSocket ? 'Path:' : 'Address:';
     portLabel.classList.toggle('hidden', isSocket);
     portInput.classList.toggle('hidden', isSocket);
@@ -843,12 +903,43 @@ function renderServerBox(srv, index, total) {
   };
   const checkConflict = () => {
     const proto = protoSel.value;
-    if (proto === 'SOCKET') { portInput.style.borderColor = ''; return; }
+    const editIndex = parseInt(
+      (document.querySelector('.port-edit') || {}).dataset?.portIndex);
+    // Endpoint conflict check
+    const ep = wsEndpoint.value.trim();
+    if (proto === 'WEBSOCKET' && ep) {
+      // Check against other ports
+      const epConflict = usedEndpoints.find(u =>
+        u.endpoint === ep && u.index !== editIndex);
+      // Check against other server boxes in this editor
+      let editorDup = false;
+      const serversDiv = $('edit-servers');
+      if (serversDiv) {
+        serversDiv.querySelectorAll('.server-box').forEach(b => {
+          if (b === box) return;
+          if (b.querySelector('.srv-protocol').value === 'WEBSOCKET'
+              && b.querySelector('.srv-endpoint').value.trim() === ep)
+            editorDup = true;
+        });
+      }
+      const epErr = epConflict || editorDup;
+      wsEndpoint.style.borderColor = epErr ? '#e55' : '';
+      wsEndpoint.title = epConflict
+        ? 'Endpoint used by Port ' + epConflict.index
+        : editorDup ? 'Duplicate endpoint' : '';
+    } else {
+      wsEndpoint.style.borderColor = '';
+      wsEndpoint.title = '';
+    }
+    // Port conflict check
+    if (proto === 'SOCKET' || proto === 'WEBSOCKET') {
+      portInput.style.borderColor = '';
+      portInput.title = '';
+      return;
+    }
     const addr = addrInput.value.trim();
     const p = parseInt(portInput.value);
     if (!p) { portInput.style.borderColor = ''; return; }
-    const editIndex = parseInt(
-      (document.querySelector('.port-edit') || {}).dataset?.portIndex);
     const conflict = usedPorts.find(u =>
       u.port === p && u.address === addr && u.index !== editIndex);
     portInput.style.borderColor = conflict ? '#e55' : '';
@@ -857,6 +948,7 @@ function renderServerBox(srv, index, total) {
   };
   portInput.oninput = checkConflict;
   addrInput.oninput = checkConflict;
+  wsEndpoint.oninput = checkConflict;
   protoSel.onchange = () => { updateProtoFields(); checkConflict(); };
   updateProtoFields();
   checkConflict();
@@ -930,10 +1022,18 @@ function collectConfig() {
   $('edit-servers').querySelectorAll('.server-box').forEach(box => {
     const proto = box.querySelector('.srv-protocol').value.toLowerCase();
     const srv = {protocol: proto};
-    srv.address = box.querySelector('.srv-address').value.trim();
-    if (proto !== 'socket') {
-      const port = box.querySelector('.srv-port').value;
-      if (port) srv.port = parseInt(port);
+    if (proto === 'websocket') {
+      const endpoint = box.querySelector('.srv-endpoint').value.trim();
+      if (endpoint) srv.endpoint = endpoint;
+      const wsToken = box.querySelector('.srv-token').value.trim();
+      if (wsToken) srv.token = wsToken;
+      if (!box.querySelector('.srv-data').checked) srv.data = false;
+    } else {
+      srv.address = box.querySelector('.srv-address').value.trim();
+      if (proto !== 'socket') {
+        const port = box.querySelector('.srv-port').value;
+        if (port) srv.port = parseInt(port);
+      }
     }
     if (proto === 'ssl') {
       const ssl = {};

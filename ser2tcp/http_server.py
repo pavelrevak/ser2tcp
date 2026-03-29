@@ -140,23 +140,27 @@ class HttpServerWrapper():
         if not ws_server:
             client.respond({'error': 'Not found'}, status=404)
             return
-        # Auth: per-server token or global auth
-        if ws_server.token:
-            token = self._get_bearer_token(client)
-            if token != ws_server.token:
-                client.respond(
-                    {'error': 'Authorization required'}, status=401)
-                return
+        # Auth: per-server token, global auth, or both
+        # No auth configured and no per-server token → allow
+        token = self._get_bearer_token(client)
+        if ws_server.token and token == ws_server.token:
+            pass  # per-server token matches
         elif self._auth and not self._auth.is_empty:
-            token = self._get_bearer_token(client)
             if not token:
                 client.respond(
                     {'error': 'Authorization required'}, status=401)
                 return
+            # Try global auth first, then per-server token
             user = self._auth.authenticate(token)
-            if not user:
+            if not user and token != ws_server.token:
                 client.respond(
                     {'error': 'Invalid or expired token'}, status=401)
+                return
+        elif ws_server.token:
+            # No global auth, but server has token
+            if token != ws_server.token:
+                client.respond(
+                    {'error': 'Authorization required'}, status=401)
                 return
         client.accept_websocket()
         self._ws_clients[client] = ws_server
@@ -454,6 +458,33 @@ class HttpServerWrapper():
                             return f'Unknown signal: {sig}'
         return None
 
+    def _get_used_endpoints(self, exclude_index=None):
+        """Return set of endpoint names used across all proxies"""
+        endpoints = set()
+        for i, proxy in enumerate(self._serial_proxies):
+            if i == exclude_index:
+                continue
+            for server in proxy.servers:
+                if server.protocol == 'WEBSOCKET':
+                    endpoints.add(server.endpoint)
+        return endpoints
+
+    def _validate_endpoints(self, data, exclude_index=None):
+        """Check for duplicate endpoints, return error or None"""
+        used = self._get_used_endpoints(exclude_index)
+        seen = set()
+        for srv in data.get('servers', []):
+            proto = srv.get('protocol', '').upper()
+            if proto != 'WEBSOCKET':
+                continue
+            ep = srv.get('endpoint')
+            if ep in seen:
+                return f'Duplicate endpoint in config: {ep}'
+            if ep in used:
+                return f'Endpoint already in use: {ep}'
+            seen.add(ep)
+        return None
+
     def _create_proxy(self, config):
         """Create SerialProxy from config"""
         proxy = _serial_proxy.SerialProxy(config, self._log)
@@ -465,6 +496,8 @@ class HttpServerWrapper():
             return
         data = client.data
         error = self._validate_port_config(data)
+        if not error:
+            error = self._validate_endpoints(data)
         if error:
             self._error(client, error, 400)
             return
@@ -495,6 +528,8 @@ class HttpServerWrapper():
             return
         data = client.data
         error = self._validate_port_config(data)
+        if not error:
+            error = self._validate_endpoints(data, exclude_index=index)
         if error:
             self._error(client, error, 400)
             return
