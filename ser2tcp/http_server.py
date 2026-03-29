@@ -10,6 +10,7 @@ import serial.tools.list_ports as _list_ports
 import uhttp.server as _uhttp_server
 
 import ser2tcp.http_auth as _http_auth
+import ser2tcp.connection_control as _control
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server as _server
 
@@ -157,6 +158,8 @@ class HttpServerWrapper():
                 self._handle_api_ports_add(client, user)
             else:
                 self._error(client, 'Method not allowed', 405)
+        elif client.method == 'GET' and client.path == '/api/signals':
+            self._handle_api_signals(client)
         elif client.path.startswith('/api/ports/'):
             self._route_api_ports_item(client, user)
         elif client.path == '/api/users':
@@ -222,8 +225,17 @@ class HttpServerWrapper():
                     srv_info['port'] = server.config['port']
                 if 'ssl' in server.config:
                     srv_info['ssl'] = server.config['ssl']
+                if server.control:
+                    srv_info['control'] = server.control
                 servers.append(srv_info)
             port_info['servers'] = servers
+            if proxy.is_connected:
+                bitmask = proxy.get_signals()
+                signals = {}
+                for name in _control.SIGNAL_NAMES:
+                    bit = _control.SIGNAL_BITS[name]
+                    signals[name] = bool(bitmask & (1 << bit))
+                port_info['signals'] = signals
             ports.append(port_info)
         client.respond({'ports': ports})
 
@@ -249,6 +261,22 @@ class HttpServerWrapper():
                     info['location'] = port.location
             ports.append(info)
         client.respond(ports)
+
+    def _handle_api_signals(self, client):
+        """Return signal states for all ports"""
+        result = []
+        for proxy in self._serial_proxies:
+            bitmask = proxy.get_signals()
+            signals = {}
+            for name in _control.SIGNAL_NAMES:
+                bit = _control.SIGNAL_BITS[name]
+                signals[name] = bool(bitmask & (1 << bit))
+            result.append({
+                'name': proxy.name,
+                'connected': proxy.is_connected,
+                'signals': signals,
+            })
+        client.respond(result)
 
     def _save_config(self):
         """Save configuration to config file"""
@@ -281,6 +309,9 @@ class HttpServerWrapper():
                 self._handle_api_ports_delete(client, user, index)
             else:
                 self._error(client, 'Method not allowed', 405)
+        elif len(parts) == 2 and parts[1] == 'signals' \
+                and client.method == 'PUT':
+            self._handle_api_set_signals(client, user, index)
         elif len(parts) == 4 and parts[1] == 'connections' \
                 and client.method == 'DELETE':
             try:
@@ -323,6 +354,18 @@ class HttpServerWrapper():
             else:
                 if 'port' not in srv:
                     return 'Server port required'
+            if 'control' in srv:
+                if proto == 'TELNET':
+                    return 'Control not supported with TELNET'
+                ctl = srv['control']
+                if not isinstance(ctl, dict):
+                    return 'Invalid control config'
+                if 'signals' in ctl:
+                    if not isinstance(ctl['signals'], list):
+                        return 'control.signals must be a list'
+                    for sig in ctl['signals']:
+                        if sig.lower() not in _control.SIGNAL_BITS:
+                            return f'Unknown signal: {sig}'
         return None
 
     def _create_proxy(self, config):
@@ -411,6 +454,27 @@ class HttpServerWrapper():
         del ports[index]
         self._save_config()
         self._log.info("Port deleted: %d", index)
+        client.respond({'ok': True})
+
+    def _handle_api_set_signals(self, client, user, index):
+        """Set RTS/DTR signals on a port"""
+        if not self._require_admin(client, user):
+            return
+        if index < 0 or index >= len(self._serial_proxies):
+            self._error(client, 'Port not found', 404)
+            return
+        proxy = self._serial_proxies[index]
+        if not proxy.is_connected:
+            self._error(client, 'Port not connected', 400)
+            return
+        data = client.data
+        if not isinstance(data, dict):
+            self._error(client, 'Invalid request', 400)
+            return
+        if 'rts' in data:
+            proxy.set_rts(bool(data['rts']))
+        if 'dtr' in data:
+            proxy.set_dtr(bool(data['dtr']))
         client.respond({'ok': True})
 
     def _handle_api_disconnect(self, client, user, port_idx,

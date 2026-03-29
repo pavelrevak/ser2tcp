@@ -4,10 +4,12 @@ import fnmatch as _fnmatch
 import logging as _logging
 import socket as _socket
 import threading as _threading
+import time as _time
 
 import serial as _serial
 import serial.tools.list_ports as _list_ports
 
+import ser2tcp.connection_control as _control
 import ser2tcp.server as _server
 
 
@@ -42,6 +44,10 @@ class SerialProxy():
         self._reader_sock_w = None
         self._reader_running = False
         self._servers = []
+        self._last_signals = 0
+        self._last_signal_poll = 0
+        self._signal_poll_interval = 0.1
+        self._has_control_servers = False
         self._name = config.get('name', '')
         self._match = config['serial'].get('match')
         self._serial_config = self._init_serial_config(config['serial'])
@@ -54,6 +60,13 @@ class SerialProxy():
             self._log.info("Serial: %s", name)
         for server_config in config['servers']:
             self._servers.append(_server.Server(server_config, self, log))
+        # Detect control-enabled servers and set poll interval
+        for server in self._servers:
+            if server.control:
+                self._has_control_servers = True
+                interval = server.control.get('poll_interval')
+                if interval is not None:
+                    self._signal_poll_interval = interval
 
     def _init_serial_config(self, config):
         """Initialize serial configuration - validate and convert enum values"""
@@ -277,6 +290,62 @@ class SerialProxy():
         """Remove stale connections"""
         for server in self._servers:
             server.process_stale()
+        self.process_signals()
+
+    def set_rts(self, value):
+        """Set RTS signal and broadcast report to all clients"""
+        if self._serial:
+            self._serial.rts = value
+            self._broadcast_signals()
+
+    def set_dtr(self, value):
+        """Set DTR signal and broadcast report to all clients"""
+        if self._serial:
+            self._serial.dtr = value
+            self._broadcast_signals()
+
+    def get_signals(self):
+        """Get current signal states as bitmask"""
+        if not self._serial:
+            return 0
+        bitmask = 0
+        try:
+            if self._serial.rts:
+                bitmask |= (1 << _control.SIGNAL_BITS['rts'])
+            if self._serial.dtr:
+                bitmask |= (1 << _control.SIGNAL_BITS['dtr'])
+            if self._serial.cts:
+                bitmask |= (1 << _control.SIGNAL_BITS['cts'])
+            if self._serial.dsr:
+                bitmask |= (1 << _control.SIGNAL_BITS['dsr'])
+            if self._serial.ri:
+                bitmask |= (1 << _control.SIGNAL_BITS['ri'])
+            if self._serial.cd:
+                bitmask |= (1 << _control.SIGNAL_BITS['cd'])
+        except OSError:
+            pass
+        return bitmask
+
+    def _broadcast_signals(self):
+        """Broadcast signal report to all control-enabled servers"""
+        bitmask = self.get_signals()
+        for server in self._servers:
+            server.send_signal_report(bitmask)
+        self._last_signals = bitmask
+
+    def process_signals(self):
+        """Poll serial signals and broadcast changes"""
+        if not self._serial or not self._has_control_servers:
+            return
+        now = _time.time()
+        if now - self._last_signal_poll < self._signal_poll_interval:
+            return
+        self._last_signal_poll = now
+        bitmask = self.get_signals()
+        if bitmask != self._last_signals:
+            self._last_signals = bitmask
+            for server in self._servers:
+                server.send_signal_report(bitmask)
 
     def send(self, data):
         """Send data to serial port"""

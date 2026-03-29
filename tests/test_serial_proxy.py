@@ -258,6 +258,112 @@ class TestSerialProxyName(unittest.TestCase):
         log.info.assert_any_call("Serial: %s", 'mydev')
 
 
+class TestSignalControl(unittest.TestCase):
+    """Test serial signal control methods"""
+
+    def _make_proxy(self):
+        proxy = SerialProxy.__new__(SerialProxy)
+        _mock_init(proxy)
+        proxy._log = MagicMock()
+        proxy._serial_config = {'port': '/dev/ttyUSB0'}
+        proxy._last_signals = 0
+        proxy._last_signal_poll = 0
+        proxy._signal_poll_interval = 0.1
+        proxy._has_control_servers = False
+        proxy._name = ''
+        proxy._match = None
+        return proxy
+
+    def test_get_signals_returns_bitmask(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.rts = True
+        proxy._serial.dtr = False
+        proxy._serial.cts = True
+        proxy._serial.dsr = False
+        proxy._serial.ri = False
+        proxy._serial.cd = True
+        bitmask = proxy.get_signals()
+        # rts=bit0, cts=bit2, cd=bit5
+        self.assertEqual(bitmask, 0b100101)
+
+    def test_get_signals_not_connected(self):
+        proxy = self._make_proxy()
+        self.assertEqual(proxy.get_signals(), 0)
+
+    def test_set_rts_broadcasts(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.rts = True
+        proxy._serial.dtr = False
+        proxy._serial.cts = False
+        proxy._serial.dsr = False
+        proxy._serial.ri = False
+        proxy._serial.cd = False
+        mock_server = MagicMock()
+        proxy._servers = [mock_server]
+        proxy.set_rts(True)
+        self.assertTrue(proxy._serial.rts)
+        mock_server.send_signal_report.assert_called_once()
+
+    def test_set_dtr_broadcasts(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.rts = False
+        proxy._serial.dtr = True
+        proxy._serial.cts = False
+        proxy._serial.dsr = False
+        proxy._serial.ri = False
+        proxy._serial.cd = False
+        mock_server = MagicMock()
+        proxy._servers = [mock_server]
+        proxy.set_dtr(False)
+        mock_server.send_signal_report.assert_called_once()
+
+    def test_process_signals_detects_change(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.rts = True
+        proxy._serial.dtr = False
+        proxy._serial.cts = False
+        proxy._serial.dsr = False
+        proxy._serial.ri = False
+        proxy._serial.cd = False
+        proxy._has_control_servers = True
+        proxy._signal_poll_interval = 0
+        mock_server = MagicMock()
+        proxy._servers = [mock_server]
+        proxy._last_signals = 0  # different from current
+        proxy.process_signals()
+        mock_server.send_signal_report.assert_called_once()
+
+    def test_process_signals_no_change(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._serial.rts = False
+        proxy._serial.dtr = False
+        proxy._serial.cts = False
+        proxy._serial.dsr = False
+        proxy._serial.ri = False
+        proxy._serial.cd = False
+        proxy._has_control_servers = True
+        proxy._signal_poll_interval = 0
+        mock_server = MagicMock()
+        proxy._servers = [mock_server]
+        proxy._last_signals = 0  # same as current
+        proxy.process_signals()
+        mock_server.send_signal_report.assert_not_called()
+
+    def test_process_signals_skipped_without_control(self):
+        proxy = self._make_proxy()
+        proxy._serial = MagicMock()
+        proxy._has_control_servers = False
+        mock_server = MagicMock()
+        proxy._servers = [mock_server]
+        proxy.process_signals()
+        mock_server.send_signal_report.assert_not_called()
+
+
 class TestSerialReaderThread(unittest.TestCase):
     """Test reader thread for platforms without fileno() support"""
 

@@ -123,6 +123,7 @@ const MATCH_ATTRS = [
   'vid', 'pid', 'serial_number', 'manufacturer', 'product', 'location'
 ];
 const PROTOCOLS = ['TCP', 'TELNET', 'SSL', 'SOCKET'];
+const CONTROL_SIGNALS = ['rts', 'dtr', 'cts', 'dsr', 'ri', 'cd'];
 const BAUDRATES = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200,
   230400, 460800, 921600];
 const BYTESIZES = {8: 'EIGHTBITS', 7: 'SEVENBITS', 6: 'SIXBITS', 5: 'FIVEBITS'};
@@ -220,6 +221,30 @@ function renderPortCard(port, index) {
   if (ser.baudrate) info += ser.baudrate + ' \u2014 ';
   info += connected ? 'connected' : 'disconnected';
   div.appendChild(el('p', info));
+  // Signal indicators (clickable for RTS/DTR)
+  if (port.signals) {
+    const sigDiv = el('div', null, 'signal-indicators');
+    CONTROL_SIGNALS.forEach(sig => {
+      const on = port.signals[sig];
+      const clickable = sig === 'rts' || sig === 'dtr';
+      const badge = el('span', sig.toUpperCase(),
+        'signal-badge ' + (on ? 'signal-on' : 'signal-off')
+        + (clickable ? ' signal-click' : ''));
+      if (clickable) {
+        badge.title = sig.toUpperCase() + ': click to toggle';
+        badge.onclick = () => {
+          badge.classList.add('signal-busy');
+          api('PUT', '/api/ports/' + index + '/signals',
+              {[sig]: !on}).then(() => loadPorts()).catch(e => {
+            badge.classList.remove('signal-busy');
+            if (e !== 'unauthorized') alert(e);
+          });
+        };
+      }
+      sigDiv.appendChild(badge);
+    });
+    div.appendChild(sigDiv);
+  }
   // Show configured port or match
   if (ser.match) {
     const matchStr = Object.entries(ser.match)
@@ -232,7 +257,18 @@ function renderPortCard(port, index) {
   (port.servers || []).forEach((s, si) => {
     const proto = (s.protocol || 'tcp').toUpperCase();
     const addr = proto === 'SOCKET' ? s.address : s.address + ':' + s.port;
-    const li = el('li', proto + ' \u2014 ' + addr);
+    const li = el('li');
+    li.appendChild(document.createTextNode(proto + ' \u2014 ' + addr));
+    if (s.control) {
+      const parts = [];
+      if (s.control.rts) parts.push('RTS');
+      if (s.control.dtr) parts.push('DTR');
+      if (s.control.signals && s.control.signals.length)
+        parts.push('report: ' + s.control.signals.map(
+          s => s.toUpperCase()).join(', '));
+      const label = parts.length ? parts.join(' | ') : 'escape only';
+      li.appendChild(el('div', 'ctrl: ' + label, 'control-signals'));
+    }
     const clients = s.connections || [];
     if (clients.length) {
       const cul = el('ul');
@@ -252,7 +288,7 @@ function renderPortCard(port, index) {
       });
       li.appendChild(cul);
     } else {
-      li.appendChild(el('em', ' no connections'));
+      li.appendChild(el('em', ' no connections', 'empty'));
     }
     ul.appendChild(li);
   });
@@ -374,6 +410,7 @@ function buildConfigFromStatus(port) {
     };
     if (s.port !== undefined) srv.port = s.port;
     if (s.ssl) srv.ssl = s.ssl;
+    if (s.control) srv.control = s.control;
     return srv;
   });
   if (!config.servers.length) {
@@ -698,15 +735,108 @@ function renderServerBox(srv, index, total) {
   });
   box.appendChild(sslDiv);
 
+  // Control section
+  const ctlDiv = el('div');
+  ctlDiv.className = 'srv-control-fields';
+  const ctl = srv.control || null;
+  // Enable checkbox
+  const ctlEnableRow = el('div', null, 'field-row');
+  const ctlEnableLbl = document.createElement('label');
+  ctlEnableLbl.className = 'ctl-signal-label';
+  const ctlEnableCb = document.createElement('input');
+  ctlEnableCb.type = 'checkbox';
+  ctlEnableCb.className = 'ctl-enable';
+  ctlEnableCb.checked = !!ctl;
+  ctlEnableLbl.appendChild(ctlEnableCb);
+  ctlEnableLbl.appendChild(document.createTextNode(' Control protocol'));
+  ctlEnableRow.appendChild(ctlEnableLbl);
+  ctlDiv.appendChild(ctlEnableRow);
+  // Control details (shown when enabled)
+  const ctlDetails = el('div');
+  ctlDetails.className = 'ctl-details';
+  // Protocol description
+  const ctlDesc = el('p',
+    'Binary escape protocol using 0xFF prefix. '
+    + 'All 0xFF bytes in data are escaped (FF FF). ',
+    'ctl-desc');
+  const ctlMoreBtn = el('a', 'Protocol reference');
+  ctlMoreBtn.href = '#';
+  ctlMoreBtn.className = 'detect-link';
+  ctlMoreBtn.onclick = e => {
+    e.preventDefault();
+    const dlg = $('ctl-protocol-dlg');
+    dlg.classList.toggle('hidden');
+  };
+  ctlDesc.appendChild(ctlMoreBtn);
+  ctlDetails.appendChild(ctlDesc);
+  // RTS/DTR write enable
+  const ctlWriteRow = el('div', null, 'field-row');
+  ctlWriteRow.appendChild(el('label', 'Allow set:'));
+  ['rts', 'dtr'].forEach(sig => {
+    const lbl = document.createElement('label');
+    lbl.className = 'ctl-signal-label';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'ctl-write';
+    cb.dataset.signal = sig;
+    cb.checked = ctl ? !!ctl[sig] : false;
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + sig.toUpperCase()));
+    ctlWriteRow.appendChild(lbl);
+  });
+  ctlDetails.appendChild(ctlWriteRow);
+  // Report signals
+  const ctlSigRow = el('div', null, 'field-row');
+  ctlSigRow.appendChild(el('label', 'Report:'));
+  const ctlSignals = ctl ? (ctl.signals || []) : [];
+  CONTROL_SIGNALS.forEach(sig => {
+    const lbl = document.createElement('label');
+    lbl.className = 'ctl-signal-label';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'ctl-signal';
+    cb.dataset.signal = sig;
+    cb.checked = ctlSignals.includes(sig);
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(' ' + sig.toUpperCase()));
+    ctlSigRow.appendChild(lbl);
+  });
+  ctlDetails.appendChild(ctlSigRow);
+  // Poll interval
+  const pollRow = el('div', null, 'field-row');
+  pollRow.appendChild(el('label', 'Poll interval:'));
+  const pollSel = document.createElement('select');
+  pollSel.className = 'ctl-poll-interval';
+  const pollOptions = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+  const curPoll = ctl ? Math.round((ctl.poll_interval || 0.1) * 1000) : 100;
+  pollOptions.forEach(ms => {
+    const opt = document.createElement('option');
+    opt.value = ms;
+    opt.textContent = ms < 1000 ? ms + ' ms' : (ms / 1000) + ' s';
+    if (ms === curPoll) opt.selected = true;
+    pollSel.appendChild(opt);
+  });
+  pollRow.appendChild(pollSel);
+  ctlDetails.appendChild(pollRow);
+  ctlDiv.appendChild(ctlDetails);
+  const updateCtlVisibility = () => {
+    ctlDetails.classList.toggle('hidden', !ctlEnableCb.checked);
+  };
+  ctlEnableCb.onchange = updateCtlVisibility;
+  updateCtlVisibility();
+  box.appendChild(ctlDiv);
+
   // Update visibility based on protocol
   const updateProtoFields = () => {
     const proto = protoSel.value;
     const isSocket = proto === 'SOCKET';
     const isSsl = proto === 'SSL';
+    const isTelnet = proto === 'TELNET';
     addrLabel.textContent = isSocket ? 'Path:' : 'Address:';
     portLabel.classList.toggle('hidden', isSocket);
     portInput.classList.toggle('hidden', isSocket);
     sslDiv.classList.toggle('hidden', !isSsl);
+    ctlDiv.classList.toggle('hidden', isTelnet);
     if (isSocket) {
       addrInput.value = addrInput.value === '0.0.0.0' ? '' : addrInput.value;
     }
@@ -814,6 +944,18 @@ function collectConfig() {
       if (keyfile) ssl.keyfile = keyfile;
       if (cacerts) ssl.ca_certs = cacerts;
       if (Object.keys(ssl).length) srv.ssl = ssl;
+    }
+    if (proto !== 'telnet' && box.querySelector('.ctl-enable').checked) {
+      const ctl = {};
+      box.querySelectorAll('.ctl-write:checked').forEach(
+        cb => { ctl[cb.dataset.signal] = true; });
+      const signals = [];
+      box.querySelectorAll('.ctl-signal:checked').forEach(
+        cb => signals.push(cb.dataset.signal));
+      if (signals.length) ctl.signals = signals;
+      const pollMs = parseInt(box.querySelector('.ctl-poll-interval').value);
+      if (pollMs) ctl.poll_interval = pollMs / 1000;
+      srv.control = ctl;
     }
     config.servers.push(srv);
   });

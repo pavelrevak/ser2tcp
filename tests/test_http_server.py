@@ -928,6 +928,126 @@ class TestApiPortsCrud(unittest.TestCase):
         old_proxy.close.assert_called_once()
 
 
+class TestControlValidation(unittest.TestCase):
+    """Tests for control config validation in port API"""
+
+    def _auth_config(self):
+        return {
+            'users': [{
+                'login': 'admin',
+                'password': hash_password('secret'),
+                'admin': True,
+            }],
+        }
+
+    def _admin_token(self, wrapper):
+        client = MockClient(
+            method='POST', path='/api/login',
+            data={'login': 'admin', 'password': 'secret'})
+        wrapper._handle_request(client)
+        return client.responded['token']
+
+    def _make_wrapper(self):
+        auth = self._auth_config()
+        configuration = {
+            'http': [{'address': '127.0.0.1', 'port': 0}],
+            'users': auth['users'],
+            'ports': [],
+        }
+        manager = Mock()
+        with patch('ser2tcp.http_server._uhttp_server.HttpServer'):
+            wrapper = HttpServerWrapper(
+                {'address': '127.0.0.1', 'port': 0}, [],
+                log=Mock(), configuration=configuration,
+                server_manager=manager)
+        return wrapper
+
+    def test_add_port_with_control(self):
+        wrapper = self._make_wrapper()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                'port': 10001,
+                'control': {'signals': ['rts', 'dtr', 'cts']}}],
+        }
+        with patch.object(wrapper, '_create_proxy') as mock_create:
+            mock_create.return_value = Mock()
+            client = MockClient(
+                method='POST', path='/api/ports', data=cfg,
+                headers={'authorization': f'Bearer {token}'})
+            wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 201)
+
+    def test_control_rejected_for_telnet(self):
+        wrapper = self._make_wrapper()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{'protocol': 'telnet', 'address': '0.0.0.0',
+                'port': 10001,
+                'control': {'signals': ['cts']}}],
+        }
+        client = MockClient(
+            method='POST', path='/api/ports', data=cfg,
+            headers={'authorization': f'Bearer {token}'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+        self.assertIn('TELNET', client.responded['error'])
+
+    def test_control_unknown_signal(self):
+        wrapper = self._make_wrapper()
+        token = self._admin_token(wrapper)
+        cfg = {
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{'protocol': 'tcp', 'address': '0.0.0.0',
+                'port': 10001,
+                'control': {'signals': ['unknown']}}],
+        }
+        client = MockClient(
+            method='POST', path='/api/ports', data=cfg,
+            headers={'authorization': f'Bearer {token}'})
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+        self.assertIn('Unknown signal', client.responded['error'])
+
+    def test_signals_endpoint(self):
+        proxy = Mock()
+        proxy.name = 'test'
+        proxy.is_connected = True
+        proxy.get_signals.return_value = 0b000101  # rts + cts
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/signals')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        self.assertEqual(len(client.responded), 1)
+        signals = client.responded[0]['signals']
+        self.assertTrue(signals['rts'])
+        self.assertTrue(signals['cts'])
+        self.assertFalse(signals['dtr'])
+
+    def test_status_includes_control(self):
+        proxy = Mock()
+        proxy.name = 'test'
+        proxy.is_connected = False
+        proxy.serial_config = {'port': '/dev/ttyUSB0'}
+        proxy.match = None
+        server = Mock()
+        server.protocol = 'TCP'
+        server.config = {
+            'address': '0.0.0.0', 'port': 10001,
+            'control': {'signals': ['cts', 'dsr']},
+        }
+        server.control = {'signals': ['cts', 'dsr']}
+        server.connections = []
+        proxy.servers = [server]
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(path='/api/status')
+        wrapper._handle_request(client)
+        srv = client.responded['ports'][0]['servers'][0]
+        self.assertEqual(srv['control'], {'signals': ['cts', 'dsr']})
+
+
 class TestConfigVariants(unittest.TestCase):
     def test_single_dict_config(self):
         with patch('ser2tcp.http_server._uhttp_server.HttpServer') as mock:

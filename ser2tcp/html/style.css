@@ -24,7 +24,7 @@ button { padding: 0.4em 1em; border: none; border-radius: 4px;
 .login-box input { width: 100%; margin-bottom: 0.5em; box-sizing: border-box; }
 .login-box button { width: 100%; }
 .error { color: #e55; margin: 0.5em 0; }
-.hidden { display: none; }
+.hidden { display: none !important; }
 .badge { display: inline-block; padding: 0.1em 0.5em; border-radius: 3px;
   font-size: 0.8em; background: #e8e8e8; color: #666; }
 .badge-admin { background: #4a9eff; color: #fff; }
@@ -87,3 +87,33 @@ nav button:hover { color: #2a7edf; }
 .btn-disconnect:hover { color: #e55; }
 .detect-link { color: #4a9eff; text-decoration: none; cursor: pointer; }
 .detect-link:hover { text-decoration: underline; }
+.control-signals { color: #999; font-size: 0.85em; margin-top: 0.2em; }
+.ctl-signal-label { min-width: auto !important; display: inline-flex;
+  align-items: center; gap: 0.2em; font-size: 0.9em; }
+.srv-control-fields { margin-top: 0.5em; padding-top: 0.5em;
+  border-top: 1px dashed #e0e0e0; }
+.ctl-poll-interval { max-width: 8em; }
+.signal-indicators { display: flex; gap: 0.3em; margin: 0.4em 0; }
+.signal-badge { display: inline-block; padding: 0.1em 0.4em; border-radius: 3px;
+  font-size: 0.75em; font-weight: bold; font-family: monospace; }
+.signal-on { background: #4c4; color: #fff; }
+.signal-off { background: #e0e0e0; color: #999; }
+.signal-click { cursor: pointer; }
+.signal-click:hover { opacity: 0.8; }
+.signal-busy { opacity: 0.5; pointer-events: none; }
+.ctl-desc { color: #888; font-size: 0.85em; margin: 0.3em 0; }
+.ctl-desc a { margin-left: 0.5em; }
+.dialog-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4); display: flex; align-items: center;
+  justify-content: center; z-index: 100; }
+.dialog { background: #fff; border-radius: 8px; padding: 1.5em;
+  max-width: 500px; width: 90%; max-height: 80vh; overflow-y: auto;
+  position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+.dialog h3 { margin-top: 0; }
+.dialog h4 { margin: 1em 0 0.3em; color: #555; }
+.dialog table { font-size: 0.9em; }
+.dialog code { background: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px;
+  font-size: 0.9em; }
+.dialog p { font-size: 0.85em; color: #666; }
+.dialog-close { position: absolute; top: 0.5em; right: 0.5em;
+  font-size: 1.3em; }

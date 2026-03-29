@@ -7,6 +7,7 @@ import os as _os
 import socket as _socket
 import ssl as _ssl
 
+import ser2tcp.connection_control as _connection_control
 import ser2tcp.connection_socket as _connection_socket
 import ser2tcp.connection_ssl as _connection_ssl
 import ser2tcp.connection_tcp as _connection_tcp
@@ -35,10 +36,14 @@ class Server():
         self._protocol = self._config['protocol'].upper()
         self._send_timeout = self._config.get('send_timeout')
         self._buffer_limit = self._config.get('buffer_limit')
+        self._control = self._config.get('control')
         self._ssl_context = None
         self._socket = None
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
+        if self._control and self._protocol == 'TELNET':
+            raise ConfigError(
+                'Control protocol not supported with TELNET')
         if self._protocol == 'SOCKET':
             self._log.info(
                 "  Server: %s %s",
@@ -94,6 +99,11 @@ class Server():
         return self._config
 
     @property
+    def control(self):
+        """Return control configuration or None"""
+        return self._control
+
+    @property
     def connections(self):
         """Return list of connections"""
         return self._connections
@@ -112,8 +122,12 @@ class Server():
         }
         if self._ssl_context:
             kwargs['ssl_context'] = self._ssl_context
+        connection_class = self.CONNECTIONS[self._protocol]
+        if self._control:
+            connection_class = _connection_control.wrap_control(
+                connection_class, self._control)
         try:
-            connection = self.CONNECTIONS[self._protocol](**kwargs)
+            connection = connection_class(**kwargs)
         except _connection_ssl.SslHandshakeError as err:
             self._log.info(
                 "Client rejected: %s:%d (%s)", addr[0], addr[1], err)
@@ -203,6 +217,13 @@ class Server():
                 self._remove_connection(con)
 
     def send(self, data):
-        """Send data to connection"""
+        """Send data to all connections"""
         for con in self._connections:
             con.send(data)
+
+    def send_signal_report(self, bitmask):
+        """Send signal report to all control-enabled connections"""
+        if not self._control:
+            return
+        for con in self._connections:
+            con.send_signal_report(bitmask)

@@ -51,6 +51,38 @@
   </div>
 </div>
 
+<div id="ctl-protocol-dlg" class="dialog-overlay hidden" onclick="if(event.target===this)this.classList.add('hidden')">
+  <div class="dialog">
+    <button class="btn-remove dialog-close" onclick="this.parentElement.parentElement.classList.add('hidden')">&times;</button>
+    <h3>Control protocol reference</h3>
+    <table>
+      <thead><tr><th>Sequence</th><th>Direction</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>FF FF</code></td><td>&harr;</td><td>Literal 0xFF byte</td></tr>
+        <tr><td><code>FF 00</code></td><td>&rarr; serial</td><td>RTS low</td></tr>
+        <tr><td><code>FF 01</code></td><td>&rarr; serial</td><td>RTS high</td></tr>
+        <tr><td><code>FF 10</code></td><td>&rarr; serial</td><td>DTR low</td></tr>
+        <tr><td><code>FF 11</code></td><td>&rarr; serial</td><td>DTR high</td></tr>
+        <tr><td><code>FF C0</code></td><td>&rarr; serial</td><td>Request signal report</td></tr>
+        <tr><td><code>FF 8<em>x</em></code></td><td>&larr; client</td><td>Signal report (<em>x</em> = 6-bit bitmask)</td></tr>
+      </tbody>
+    </table>
+    <h4>Signal report bitmask</h4>
+    <table>
+      <thead><tr><th>Bit</th><th>Signal</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>RTS</td></tr>
+        <tr><td>1</td><td>DTR</td></tr>
+        <tr><td>2</td><td>CTS</td></tr>
+        <tr><td>3</td><td>DSR</td></tr>
+        <tr><td>4</td><td>RI</td></tr>
+        <tr><td>5</td><td>CD</td></tr>
+      </tbody>
+    </table>
+    <p>Report byte range: <code>0x80</code>&ndash;<code>0xBF</code>. Sent on signal change and on <code>FF C0</code> request.</p>
+  </div>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>
