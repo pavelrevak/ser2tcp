@@ -266,18 +266,33 @@ class HttpServerWrapper():
         return ports
 
     def _route_api_ports_item(self, client, user):
-        """Route /api/ports/<index> requests"""
+        """Route /api/ports/<index>/... requests"""
+        rest = client.path[len('/api/ports/'):]
+        parts = rest.split('/')
         try:
-            index = int(client.path[len('/api/ports/'):])
+            index = int(parts[0])
         except ValueError:
             self._error(client, 'Invalid port index', 400)
             return
-        if client.method == 'PUT':
-            self._handle_api_ports_update(client, user, index)
-        elif client.method == 'DELETE':
-            self._handle_api_ports_delete(client, user, index)
+        if len(parts) == 1:
+            if client.method == 'PUT':
+                self._handle_api_ports_update(client, user, index)
+            elif client.method == 'DELETE':
+                self._handle_api_ports_delete(client, user, index)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif len(parts) == 4 and parts[1] == 'connections' \
+                and client.method == 'DELETE':
+            try:
+                srv_idx = int(parts[2])
+                con_idx = int(parts[3])
+            except ValueError:
+                self._error(client, 'Invalid index', 400)
+                return
+            self._handle_api_disconnect(client, user, index,
+                srv_idx, con_idx)
         else:
-            self._error(client, 'Method not allowed', 405)
+            self._error(client, 'Not found', 404)
 
     def _validate_port_config(self, data):
         """Validate port configuration, return error string or None"""
@@ -396,6 +411,28 @@ class HttpServerWrapper():
         del ports[index]
         self._save_config()
         self._log.info("Port deleted: %d", index)
+        client.respond({'ok': True})
+
+    def _handle_api_disconnect(self, client, user, port_idx,
+            srv_idx, con_idx):
+        """Disconnect a specific client connection"""
+        if not self._require_admin(client, user):
+            return
+        if port_idx < 0 or port_idx >= len(self._serial_proxies):
+            self._error(client, 'Port not found', 404)
+            return
+        proxy = self._serial_proxies[port_idx]
+        if srv_idx < 0 or srv_idx >= len(proxy.servers):
+            self._error(client, 'Server not found', 404)
+            return
+        server = proxy.servers[srv_idx]
+        if con_idx < 0 or con_idx >= len(server.connections):
+            self._error(client, 'Connection not found', 404)
+            return
+        con = server.connections[con_idx]
+        addr = con.address_str()
+        server._remove_connection(con)
+        self._log.info("Disconnected: %s", addr)
         client.respond({'ok': True})
 
     def _handle_api_login(self, client):

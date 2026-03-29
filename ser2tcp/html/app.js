@@ -229,14 +229,27 @@ function renderPortCard(port, index) {
     div.appendChild(el('p', 'port: ' + ser.port, 'port-config-detail'));
   }
   const ul = el('ul');
-  (port.servers || []).forEach(s => {
+  (port.servers || []).forEach((s, si) => {
     const proto = (s.protocol || 'tcp').toUpperCase();
     const addr = proto === 'SOCKET' ? s.address : s.address + ':' + s.port;
     const li = el('li', proto + ' \u2014 ' + addr);
     const clients = s.connections || [];
     if (clients.length) {
       const cul = el('ul');
-      clients.forEach(c => cul.appendChild(el('li', c.address)));
+      clients.forEach((c, ci) => {
+        const cli = el('li');
+        cli.appendChild(document.createTextNode(c.address + ' '));
+        const dcBtn = document.createElement('button');
+        dcBtn.className = 'btn-disconnect';
+        dcBtn.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14">'
+          + '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12'
+          + ' 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"'
+          + ' fill="currentColor"/></svg>';
+        dcBtn.title = 'Disconnect ' + c.address;
+        dcBtn.onclick = () => disconnectClient(index, si, ci);
+        cli.appendChild(dcBtn);
+        cul.appendChild(cli);
+      });
       li.appendChild(cul);
     } else {
       li.appendChild(el('em', ' no connections'));
@@ -815,6 +828,12 @@ function savePort(index) {
   api(method, path, config).then(() => loadPorts()).catch(e => {
     if (e !== 'unauthorized') alert(e);
   });
+}
+
+function disconnectClient(portIdx, srvIdx, conIdx) {
+  api('DELETE', '/api/ports/' + portIdx + '/connections/' + srvIdx + '/' + conIdx)
+    .then(() => loadPorts())
+    .catch(e => { if (e !== 'unauthorized') alert(e); });
 }
 
 function deletePort(index) {

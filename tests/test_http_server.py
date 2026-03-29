@@ -354,6 +354,75 @@ class TestApiStatus(unittest.TestCase):
         self.assertNotIn('ssl', srv)
 
 
+class TestApiDisconnect(unittest.TestCase):
+    def _make_connection(self, address='192.168.1.5:54321'):
+        con = Mock()
+        con.address_str.return_value = address
+        return con
+
+    def _make_server_with_con(self):
+        con = self._make_connection()
+        server = Mock()
+        server.protocol = 'TCP'
+        server.config = {'address': '0.0.0.0', 'port': 21000}
+        server.connections = [con]
+        return server, con
+
+    def _make_proxy_with_con(self):
+        server, con = self._make_server_with_con()
+        proxy = Mock()
+        proxy.serial_config = {'port': '/dev/ttyUSB0'}
+        proxy.match = None
+        proxy.name = ''
+        proxy.is_connected = True
+        proxy.servers = [server]
+        return proxy, server, con
+
+    def test_disconnect_client(self):
+        proxy, server, con = self._make_proxy_with_con()
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(
+            method='DELETE',
+            path='/api/ports/0/connections/0/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 200)
+        server._remove_connection.assert_called_once_with(con)
+
+    def test_disconnect_port_not_found(self):
+        wrapper = make_wrapper(serial_proxies=[])
+        client = MockClient(
+            method='DELETE',
+            path='/api/ports/0/connections/0/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_disconnect_server_not_found(self):
+        proxy, _, _ = self._make_proxy_with_con()
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(
+            method='DELETE',
+            path='/api/ports/0/connections/5/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_disconnect_connection_not_found(self):
+        proxy, _, _ = self._make_proxy_with_con()
+        wrapper = make_wrapper(serial_proxies=[proxy])
+        client = MockClient(
+            method='DELETE',
+            path='/api/ports/0/connections/0/5')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 404)
+
+    def test_disconnect_invalid_index(self):
+        wrapper = make_wrapper(serial_proxies=[])
+        client = MockClient(
+            method='DELETE',
+            path='/api/ports/0/connections/abc/0')
+        wrapper._handle_request(client)
+        self.assertEqual(client.respond_status, 400)
+
+
 class TestApiDetect(unittest.TestCase):
     def _make_port_info(self, device='/dev/ttyUSB0', vid=None, pid=None,
             serial_number=None, manufacturer=None, product=None,
