@@ -6,6 +6,57 @@ const el = (tag, text, cls) => {
   return e;
 };
 
+// Theme switcher
+function applyTheme(theme) {
+  if (theme === 'auto') {
+    document.documentElement.removeAttribute('data-theme');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+  // Update icon visibility
+  ['light', 'dark', 'auto'].forEach(t => {
+    const icon = $('theme-icon-' + t);
+    if (icon) icon.classList.toggle('active', t === theme);
+  });
+  // Update dropdown active state
+  const dropdown = $('theme-dropdown');
+  if (dropdown) {
+    dropdown.querySelectorAll('button').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.theme === theme);
+    });
+  }
+}
+
+function initTheme() {
+  const saved = localStorage.getItem('ser2tcp_theme') || 'auto';
+  const btn = $('theme-btn');
+  const dropdown = $('theme-dropdown');
+  if (btn && dropdown) {
+    btn.onclick = e => {
+      e.stopPropagation();
+      dropdown.classList.toggle('open');
+    };
+    dropdown.querySelectorAll('button').forEach(b => {
+      b.onclick = () => {
+        const theme = b.dataset.theme;
+        localStorage.setItem('ser2tcp_theme', theme);
+        applyTheme(theme);
+        dropdown.classList.remove('open');
+      };
+    });
+    document.addEventListener('click', () => dropdown.classList.remove('open'));
+  }
+  applyTheme(saved);
+}
+
+// Apply theme immediately to avoid flash
+(function() {
+  const saved = localStorage.getItem('ser2tcp_theme');
+  if (saved && saved !== 'auto') {
+    document.documentElement.setAttribute('data-theme', saved);
+  }
+})();
+
 // Hash password with SHA-256 and random salt (same format as server)
 async function hashPassword(password) {
   const salt = Array.from(crypto.getRandomValues(new Uint8Array(16)))
@@ -118,7 +169,9 @@ function switchTab(tab, data) {
     t => t.classList.toggle('hidden', t.id !== 'tab-' + tab));
   if (tab === 'ports') loadPorts(data);
   else if (tab === 'users') loadUsers();
-  if (location.hash !== '#' + tab) history.pushState(null, '', '#' + tab);
+  const newPath = tab === 'ports' ? location.pathname : '#' + tab;
+  if (location.hash !== (tab === 'ports' ? '' : '#' + tab))
+    history.pushState(null, '', newPath);
 }
 
 // --- Ports ---
@@ -277,26 +330,19 @@ function renderPortCard(port, index) {
       const urlEl = el('div', wsUrl, 'port-config-detail');
       urlEl.style.cursor = 'pointer';
       urlEl.title = 'Click to copy';
-      urlEl.onclick = () => {
+      urlEl.onclick = e => {
+        e.stopPropagation();
         navigator.clipboard.writeText(wsUrl);
         urlEl.textContent = 'Copied!';
         setTimeout(() => { urlEl.textContent = wsUrl; }, 1000);
       };
       li.appendChild(urlEl);
       if (s.data !== false) {
-        const termLink = document.createElement('a');
-        termLink.href = '/xterm/' + s.endpoint;
-        termLink.className = 'detect-link';
-        termLink.textContent = 'Terminal';
-        termLink.target = '_blank';
         const linksDiv = el('div', null, 'ws-links');
-        linksDiv.appendChild(termLink);
-        const rawLink = document.createElement('a');
-        rawLink.href = '/raw/' + s.endpoint;
-        rawLink.className = 'detect-link';
-        rawLink.textContent = 'Raw';
-        rawLink.target = '_blank';
-        linksDiv.appendChild(rawLink);
+        linksDiv.innerHTML = '<a href="/xterm/' + s.endpoint
+          + '" class="detect-link" target="_blank" rel="noopener">Terminal</a>'
+          + '<a href="/raw/' + s.endpoint
+          + '" class="detect-link" target="_blank" rel="noopener">Raw</a>';
         li.appendChild(linksDiv);
       }
       if (s.data === false)
@@ -730,7 +776,8 @@ function renderServerBox(srv, index, total) {
   const box = el('div', null, 'server-box');
   box.dataset.serverIndex = index;
 
-  const removeBtn = el('button', '\u00d7', 'btn-remove');
+  const removeBtn = el('button', null, 'btn-remove');
+  removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6h14"/></svg>';
   removeBtn.disabled = total <= 1;
   removeBtn.onclick = () => removeServerBox(box);
   box.appendChild(removeBtn);
@@ -912,6 +959,29 @@ function renderServerBox(srv, index, total) {
   updateCtlVisibility();
   box.appendChild(ctlDiv);
 
+  // IP filter section
+  const ipDiv = el('div');
+  ipDiv.className = 'srv-ip-filter';
+  const ipAllowRow = el('div', null, 'field-row');
+  ipAllowRow.appendChild(el('label', 'Allow IPs:'));
+  const ipAllowInput = document.createElement('input');
+  ipAllowInput.type = 'text';
+  ipAllowInput.className = 'srv-allow';
+  ipAllowInput.placeholder = '192.168.1.0/24, 10.0.0.5';
+  ipAllowInput.value = (srv.allow || []).join(', ');
+  ipAllowRow.appendChild(ipAllowInput);
+  ipDiv.appendChild(ipAllowRow);
+  const ipDenyRow = el('div', null, 'field-row');
+  ipDenyRow.appendChild(el('label', 'Deny IPs:'));
+  const ipDenyInput = document.createElement('input');
+  ipDenyInput.type = 'text';
+  ipDenyInput.className = 'srv-deny';
+  ipDenyInput.placeholder = '192.168.1.100';
+  ipDenyInput.value = (srv.deny || []).join(', ');
+  ipDenyRow.appendChild(ipDenyInput);
+  ipDiv.appendChild(ipDenyRow);
+  box.appendChild(ipDiv);
+
   // Update visibility based on protocol
   const updateProtoFields = () => {
     const proto = protoSel.value;
@@ -925,6 +995,7 @@ function renderServerBox(srv, index, total) {
     addrLabel.textContent = isSocket ? 'Path:' : 'Address:';
     sslDiv.classList.toggle('hidden', !isSsl);
     ctlDiv.classList.toggle('hidden', isTelnet);
+    ipDiv.classList.toggle('hidden', isSocket);
     // Update control description
     ctlDesc.textContent = '';
     if (isWs) {
@@ -1095,6 +1166,17 @@ function collectConfig() {
       if (pollMs) ctl.poll_interval = pollMs / 1000;
       srv.control = ctl;
     }
+    // IP filter
+    if (proto !== 'socket') {
+      const allowStr = box.querySelector('.srv-allow').value.trim();
+      if (allowStr) {
+        srv.allow = allowStr.split(',').map(s => s.trim()).filter(s => s);
+      }
+      const denyStr = box.querySelector('.srv-deny').value.trim();
+      if (denyStr) {
+        srv.deny = denyStr.split(',').map(s => s.trim()).filter(s => s);
+      }
+    }
     config.servers.push(srv);
   });
 
@@ -1222,6 +1304,7 @@ async function addUser() {
 
 // --- Init ---
 function init() {
+  initTheme();
   $('login-btn').addEventListener('click', doLogin);
   $('login-pass').addEventListener('keydown',
     e => { if (e.key === 'Enter') doLogin(); });

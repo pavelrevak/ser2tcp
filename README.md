@@ -19,6 +19,7 @@ https://github.com/cortexm/ser2tcp
   - serial port send received data to all connected clients
 - non-blocking send with configurable timeout and buffer limit
 - serial signal control (RTS, DTR, CTS, DSR, RI, CD) via escape protocol or WebSocket JSON
+- IP filtering with allow/deny lists (CIDR notation supported)
 - built-in HTTP server with REST API for status monitoring
 - web interface for viewing configured ports and connections
 - web terminal clients (xterm.js VT100 terminal and raw colored view)
@@ -218,6 +219,33 @@ For `ssl` protocol, add `ssl` object with certificate paths:
 
 If `ca_certs` is specified, clients must provide a valid certificate signed by the CA.
 
+#### IP filtering
+
+Restrict client connections by IP address using `allow` and/or `deny` lists:
+
+```json
+{
+    "address": "0.0.0.0",
+    "port": 10001,
+    "protocol": "tcp",
+    "allow": ["192.168.1.0/24", "10.0.0.5"],
+    "deny": ["192.168.1.100"]
+}
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `allow` | List of allowed IP addresses/networks (CIDR notation supported) |
+| `deny` | List of denied IP addresses/networks (CIDR notation supported) |
+
+Filter logic:
+- **No config**: all IPs allowed
+- **Only `deny`**: all IPs allowed except those in deny list
+- **Only `allow`**: only IPs in allow list are allowed
+- **Both**: deny takes precedence, then allow list is checked
+
+Works on TCP, TELNET, SSL, WebSocket and HTTP servers. Not applicable to Unix socket (no IP addresses). Rejected connections are logged.
+
 ##### Creating self-signed certificates
 
 Generate CA and server certificate for testing:
@@ -312,6 +340,19 @@ HTTPS with SSL:
             "certfile": "server.crt", "keyfile": "server.key"
         }}
     ]
+}
+```
+
+With IP filtering:
+
+```json
+{
+    "http": [{
+        "address": "0.0.0.0",
+        "port": 8080,
+        "allow": ["192.168.0.0/16"],
+        "deny": ["192.168.1.100"]
+    }]
 }
 ```
 

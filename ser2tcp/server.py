@@ -12,6 +12,7 @@ import ser2tcp.connection_socket as _connection_socket
 import ser2tcp.connection_ssl as _connection_ssl
 import ser2tcp.connection_tcp as _connection_tcp
 import ser2tcp.connection_telnet as _connection_telnet
+import ser2tcp.ip_filter as _ip_filter
 
 
 class ConfigError(Exception):
@@ -38,6 +39,7 @@ class Server():
         self._buffer_limit = self._config.get('buffer_limit')
         self._control = self._config.get('control')
         self._data_enabled = self._config.get('data', True)
+        self._ip_filter = _ip_filter.create_filter(self._config, log=self._log)
         self._ssl_context = None
         self._socket = None
         if self._protocol not in self.CONNECTIONS:
@@ -122,6 +124,10 @@ class Server():
         sock, addr = self._socket.accept()
         if self._protocol == 'SOCKET':
             addr = (self._config['address'],)
+        elif self._ip_filter and not self._ip_filter.is_allowed(addr[0]):
+            self._log.info("Client rejected (IP filter): %s:%d", addr[0], addr[1])
+            sock.close()
+            return
         kwargs = {
             'connection': (sock, addr),
             'ser': self._serial,

@@ -11,6 +11,7 @@ import uhttp.server as _uhttp_server
 
 import ser2tcp.http_auth as _http_auth
 import ser2tcp.connection_control as _control
+import ser2tcp.ip_filter as _ip_filter
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server as _server
 
@@ -47,7 +48,7 @@ class HttpServerWrapper():
                     break
         self._auth = _http_auth.SessionManager(auth_config) if auth_config else None
         self._ws_clients = {}  # uhttp client -> ServerWebSocket
-        self._servers = []
+        self._servers = []  # list of (HttpServer, IpFilter or None)
         for config in configs:
             address = config.get('address', '0.0.0.0')
             port = config.get('port', 8080)
@@ -62,21 +63,22 @@ class HttpServerWrapper():
             else:
                 self._log.info(
                     "HTTP server: %s:%d", address, port)
-            self._servers.append(_uhttp_server.HttpServer(
+            ip_flt = _ip_filter.create_filter(config, log=self._log)
+            self._servers.append((_uhttp_server.HttpServer(
                 address=address, port=port, ssl_context=ssl_context,
-                event_mode=True))
+                event_mode=True), ip_flt))
 
     def read_sockets(self):
         """Return sockets for reading"""
         sockets = []
-        for server in self._servers:
+        for server, _ in self._servers:
             sockets.extend(server.read_sockets)
         return sockets
 
     def write_sockets(self):
         """Return sockets for writing"""
         sockets = []
-        for server in self._servers:
+        for server, _ in self._servers:
             sockets.extend(server.write_sockets)
         return sockets
 
@@ -90,9 +92,21 @@ class HttpServerWrapper():
 
     def _process_uhttp(self, read_sockets, write_sockets):
         """Process uhttp events"""
-        for server in self._servers:
+        for server, ip_flt in self._servers:
             client = server.process_events(read_sockets, write_sockets)
             if client:
+                # Check IP filter for new requests
+                if ip_flt and client.event in (
+                        _uhttp_server.EVENT_REQUEST,
+                        _uhttp_server.EVENT_HEADERS,
+                        _uhttp_server.EVENT_WS_REQUEST):
+                    client_ip = client.addr[0] \
+                        if isinstance(client.addr, tuple) else None
+                    if client_ip and not ip_flt.is_allowed(client_ip):
+                        self._log.info(
+                            "HTTP rejected (IP filter): %s", client_ip)
+                        client.respond({'error': 'Forbidden'}, status=403)
+                        continue
                 if client.event == _uhttp_server.EVENT_WS_REQUEST:
                     self._handle_ws_upgrade(client)
                 elif client.event in (
@@ -122,7 +136,7 @@ class HttpServerWrapper():
 
     def close(self):
         """Close all HTTP servers"""
-        for server in self._servers:
+        for server, _ in self._servers:
             server.close()
 
     def _get_ws_endpoints(self):
@@ -146,6 +160,14 @@ class HttpServerWrapper():
         if not ws_server:
             client.respond({'error': 'Not found'}, status=404)
             return
+        # IP filter check
+        if ws_server.ip_filter:
+            client_ip = client.addr[0] if isinstance(client.addr, tuple) else None
+            if client_ip and not ws_server.ip_filter.is_allowed(client_ip):
+                self._log.info(
+                    "WebSocket rejected (IP filter): %s", client_ip)
+                client.respond({'error': 'Forbidden'}, status=403)
+                return
         # Auth: per-server token, global auth, or both
         # No auth configured and no per-server token → allow
         token = self._get_bearer_token(client)
@@ -472,6 +494,14 @@ class HttpServerWrapper():
                     for sig in ctl['signals']:
                         if sig.lower() not in _control.SIGNAL_BITS:
                             return f'Unknown signal: {sig}'
+            # Validate IP filter config
+            for key in ('allow', 'deny'):
+                if key in srv:
+                    if not isinstance(srv[key], list):
+                        return f'{key} must be a list'
+                    for network in srv[key]:
+                        if not isinstance(network, str):
+                            return f'{key} entries must be strings'
         return None
 
     def _get_used_endpoints(self, exclude_index=None):

@@ -1,4 +1,4 @@
-:root {
+:root, [data-theme="light"] {
   --bg: #f5f5f5;
   --bg-card: #fff;
   --bg-input: #fff;
@@ -29,8 +29,39 @@
   --toolbar-bg: #f0f0f0;
 }
 
+[data-theme="dark"] {
+  --bg: #1a1a1a;
+  --bg-card: #242424;
+  --bg-input: #1a1a1a;
+  --bg-input-focus: #111;
+  --text-input-focus: #eee;
+  --bg-server: #2c2c2c;
+  --border: #484848;
+  --border-light: #3a3a3a;
+  --text: #ddd;
+  --text-secondary: #eee;
+  --text-muted: #777;
+  --accent: #5aadff;
+  --accent-hover: #7dc0ff;
+  --danger: #f66;
+  --success: #5d5;
+  --shadow: rgba(0,0,0,0.3);
+  --edit-border: #5aadff;
+  --badge-bg: #333;
+  --badge-text: #aaa;
+  --nav-bg: transparent;
+  --dialog-bg: #2a2a2a;
+  --dialog-overlay: rgba(0,0,0,0.6);
+  --signal-off-bg: #333;
+  --signal-off-text: #666;
+  --control-border: #3a3a3a;
+  --input-disabled-bg: #222;
+  --input-disabled-text: #555;
+  --toolbar-bg: #242424;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #1a1a1a;
     --bg-card: #242424;
     --bg-input: #1a1a1a;
@@ -108,6 +139,7 @@ input, select { padding: 0.4em 0.6em; border: 1px solid var(--border);
 input:focus, select:focus { outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(74,158,255,0.2);
   background: var(--bg-input-focus); color: var(--text-input-focus); }
+input::placeholder { color: var(--text-muted); opacity: 0.6; }
 button { padding: 0.4em 1em; border: none; border-radius: 6px;
   cursor: pointer; color: #fff; font-size: 0.9em; }
 .btn-primary { background: var(--accent); }
@@ -132,6 +164,27 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .dot-off { color: var(--text-muted); }
 .dot-err { color: var(--danger); }
 .toolbar { margin: 0.8em 0; padding: 0.6em 0; }
+.theme-menu { position: relative; margin-right: 0.8em; }
+.theme-btn { background: none; border: none; color: var(--text-secondary);
+  cursor: pointer; padding: 0.3em; display: flex; align-items: center; }
+.theme-btn:hover { color: var(--accent); }
+.theme-icon { width: 1.2em; height: 1.2em; display: none; }
+.theme-icon.active { display: block; }
+.theme-dropdown { position: absolute; top: 100%; right: 0; margin-top: 0.3em;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: 0 4px 12px var(--shadow);
+  display: none; min-width: 5em; z-index: 100; overflow: hidden; }
+.theme-dropdown.open { display: block; }
+.theme-dropdown button { display: flex; align-items: center; gap: 0.5em;
+  width: 100%; padding: 0.5em 0.8em; background: none; border: none;
+  text-align: left; cursor: pointer; color: var(--text); font-size: 0.85em; }
+.theme-dropdown button:hover { background: var(--bg-server); }
+.theme-dropdown button.active { font-weight: 600; }
+.theme-dropdown button svg { width: 1em; height: 1em; flex-shrink: 0; }
+.theme-opt-light { color: #d90 !important; }
+.theme-opt-dark { color: #68f !important; }
+.theme-dropdown button.active.theme-opt-light { color: #b70 !important; }
+.theme-dropdown button.active.theme-opt-dark { color: #46d !important; }
 .user-info { display: flex; align-items: center; gap: 0.8em;
   color: var(--text-secondary); font-size: 0.85em; }
 .user-info button { background: none; border: 1px solid var(--border);
@@ -166,9 +219,12 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
   border-radius: 6px; border: 1px solid var(--control-border);
   position: relative; }
 .server-box .btn-remove { position: absolute; top: 0.5em; right: 0.5em;
-  background: none; color: var(--danger); font-size: 1.2em; padding: 0 0.4em;
-  border: none; }
-.server-box .btn-remove:disabled { color: var(--text-muted); cursor: default; }
+  background: none; color: var(--text-muted); padding: 0.2em;
+  border: none; display: flex; align-items: center; }
+.server-box .btn-remove:hover { color: var(--danger); }
+.server-box .btn-remove:disabled { color: var(--border); cursor: default; }
+.server-box .btn-remove:disabled:hover { color: var(--border); }
+.server-box .btn-remove svg { width: 1.1em; height: 1.1em; }
 .edit-actions { display: flex; gap: 0.5em; margin-top: 1em; }
 .edit-actions .spacer { flex: 1; }
 .btn-edit { position: absolute; top: 1em; right: 1em; background: none;
@@ -197,7 +253,9 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .ctl-signal-label { min-width: auto !important; display: inline-flex;
   align-items: center; gap: 0.2em; font-size: 0.9em; }
 .srv-control-fields { margin-top: 0.5em; padding-top: 0.5em;
-  border-top: 1px dashed var(--control-border); }
+  border-top: 1px dashed var(--border); }
+.srv-ip-filter { margin-top: 0.5em; padding-top: 0.5em;
+  border-top: 1px dashed var(--border); }
 .ctl-poll-interval { max-width: 8em; }
 .signal-indicators { display: flex; gap: 0.3em; margin: 0.4em 0; }
 .signal-badge { display: inline-block; padding: 0.2em 0.5em; border-radius: 3px;

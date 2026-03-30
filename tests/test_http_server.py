@@ -1062,3 +1062,92 @@ class TestConfigVariants(unittest.TestCase):
                 {'address': '0.0.0.0', 'port': 8081},
             ], [], log=Mock())
             self.assertEqual(mock.call_count, 2)
+
+
+class TestIpFilterValidation(unittest.TestCase):
+    """Test IP filter validation in port config"""
+
+    def test_allow_list_valid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'allow': ['192.168.1.0/24', '10.0.0.5'],
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_deny_list_valid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'deny': ['10.0.0.0/8'],
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_allow_and_deny_valid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'allow': ['192.168.0.0/16'],
+                'deny': ['192.168.1.100'],
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_allow_not_list(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'allow': '192.168.1.0/24',
+            }]
+        })
+        self.assertEqual(result, 'allow must be a list')
+
+    def test_deny_not_list(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'deny': '10.0.0.0/8',
+            }]
+        })
+        self.assertEqual(result, 'deny must be a list')
+
+    def test_allow_entry_not_string(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'port': 10001,
+                'allow': [123],
+            }]
+        })
+        self.assertEqual(result, 'allow entries must be strings')
+
+    def test_websocket_with_ip_filter(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'websocket',
+                'endpoint': 'test',
+                'allow': ['192.168.1.0/24'],
+            }]
+        })
+        self.assertIsNone(result)

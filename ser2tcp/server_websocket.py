@@ -4,6 +4,7 @@ import json as _json
 import logging as _logging
 
 import ser2tcp.connection_control as _control
+import ser2tcp.ip_filter as _ip_filter
 import ser2tcp.server as _server
 
 
@@ -38,6 +39,7 @@ class ServerWebSocket():
             self._ctl_dtr = bool(self._control.get('dtr'))
             signals = self._control.get('signals', [])
             self._ctl_signals = set(s.lower() for s in signals)
+        self._ip_filter = _ip_filter.create_filter(config, log=log)
         self._connections = []
         self._log.info(
             "  Server: /ws/%s WEBSOCKET", self._endpoint)
@@ -76,6 +78,11 @@ class ServerWebSocket():
     def data_enabled(self):
         """Return True if data forwarding is enabled"""
         return self._data_enabled
+
+    @property
+    def ip_filter(self):
+        """Return IP filter or None"""
+        return self._ip_filter
 
     def has_connections(self):
         """True if server has active connections"""
