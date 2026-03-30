@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ser2tcp terminal</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/css/xterm.min.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1e1e1e; color: #ccc; font-family: sans-serif;
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+.toolbar { display: flex; align-items: center; gap: 0.8em;
+  padding: 0.4em 0.8em; background: #2d2d2d; border-bottom: 1px solid #444;
+  flex-shrink: 0; }
+.toolbar .endpoint { color: #4a9eff; font-family: monospace; font-size: 0.95em; }
+.toolbar button { padding: 0.3em 0.8em; border: 1px solid #555;
+  border-radius: 4px; cursor: pointer; font-size: 0.85em;
+  background: #383838; color: #ccc; }
+.toolbar button:hover { background: #444; }
+.toolbar .btn-connect { background: #4c4; color: #fff; border-color: #4c4; }
+.toolbar .btn-connect:hover { background: #3b3; }
+.toolbar .btn-disconnect { background: #e55; color: #fff; border-color: #e55; }
+.toolbar .btn-disconnect:hover { background: #d44; }
+.toolbar .spacer { flex: 1; }
+.toolbar .status { font-size: 0.85em; }
+.toolbar .status .dot { font-size: 1.2em; vertical-align: middle; }
+.toolbar .status .dot-on { color: #4c4; }
+.toolbar .status .dot-off { color: #666; }
+.toolbar a { color: #4a9eff; text-decoration: none; font-size: 0.85em; }
+.toolbar a:hover { text-decoration: underline; }
+
+.signal-bar { display: flex; align-items: center; gap: 0.4em;
+  padding: 0.3em 0.8em; background: #252525; border-bottom: 1px solid #333;
+  flex-shrink: 0; }
+.signal-bar.hidden { display: none; }
+.signal-badge { display: inline-block; padding: 0.1em 0.4em; border-radius: 3px;
+  font-size: 0.75em; font-weight: bold; font-family: monospace; }
+.signal-on { background: #4c4; color: #fff; }
+.signal-off { background: #444; color: #666; }
+.signal-click { cursor: pointer; }
+.signal-click:hover { opacity: 0.8; }
+
+#terminal-container { flex: 1; overflow: hidden; }
+#terminal-container .xterm { height: 100%; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <a href="/">&larr; Ports</a>
+  <span class="endpoint" id="endpoint-name"></span>
+  <span class="spacer"></span>
+  <span class="status" id="status">
+    <span class="dot dot-off">&#x25cf;</span> Disconnected
+  </span>
+  <button id="btn-clear">Clear</button>
+  <button id="btn-connect" class="btn-connect">Connect</button>
+</div>
+
+<div class="signal-bar hidden" id="signal-bar"></div>
+<div id="terminal-container"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0/lib/addon-fit.min.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const pathParts = location.pathname.split('/xterm/');
+const endpoint = pathParts[1] || '';
+const token = localStorage.getItem('ser2tcp_token');
+
+$('endpoint-name').textContent = '/ws/' + endpoint;
+document.title = 'ser2tcp \u2014 ' + endpoint;
+
+let ws = null;
+let signals = {};
+
+const term = new Terminal({
+  cursorBlink: true,
+  scrollback: 10000,
+  fontSize: 14,
+  theme: {
+    background: '#1e1e1e',
+    foreground: '#cccccc',
+    cursor: '#cccccc',
+    selectionBackground: '#264f78',
+  },
+});
+const fitAddon = new FitAddon.FitAddon();
+term.loadAddon(fitAddon);
+term.open($('terminal-container'));
+fitAddon.fit();
+
+term.onData(data => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(new TextEncoder().encode(data));
+  }
+});
+
+window.addEventListener('resize', () => fitAddon.fit());
+
+function connect() {
+  if (ws) return;
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let url = scheme + '//' + location.host + '/ws/' + endpoint;
+  if (token) url += '?token=' + encodeURIComponent(token);
+  ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => updateStatus(true);
+  ws.onclose = ev => {
+    ws = null;
+    updateStatus(false);
+  };
+  ws.onmessage = ev => {
+    if (typeof ev.data === 'string') {
+      try {
+        const msg = JSON.parse(ev.data);
+        if (msg.signals) { signals = msg.signals; renderSignals(); }
+      } catch {}
+      return;
+    }
+    term.write(new Uint8Array(ev.data));
+  };
+}
+
+function disconnect() {
+  if (ws) { ws.close(); ws = null; updateStatus(false); }
+}
+
+function updateStatus(connected) {
+  const el = $('status');
+  if (connected) {
+    el.innerHTML = '<span class="dot dot-on">&#x25cf;</span> Connected';
+    $('btn-connect').textContent = 'Disconnect';
+    $('btn-connect').className = 'btn-disconnect';
+    $('btn-connect').onclick = disconnect;
+  } else {
+    el.innerHTML = '<span class="dot dot-off">&#x25cf;</span> Disconnected';
+    $('btn-connect').textContent = 'Connect';
+    $('btn-connect').className = 'btn-connect';
+    $('btn-connect').onclick = connect;
+  }
+}
+
+function renderSignals() {
+  const bar = $('signal-bar');
+  const names = Object.keys(signals);
+  if (!names.length) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  bar.innerHTML = '';
+  names.forEach(sig => {
+    const on = signals[sig];
+    const clickable = sig === 'rts' || sig === 'dtr';
+    const badge = document.createElement('span');
+    badge.textContent = sig.toUpperCase();
+    badge.className = 'signal-badge ' + (on ? 'signal-on' : 'signal-off')
+      + (clickable ? ' signal-click' : '');
+    if (clickable) {
+      badge.title = sig.toUpperCase() + ': click to toggle';
+      badge.onclick = () => {
+        if (ws && ws.readyState === WebSocket.OPEN)
+          ws.send(JSON.stringify({[sig]: !on}));
+      };
+    }
+    bar.appendChild(badge);
+  });
+}
+
+$('btn-clear').onclick = () => term.clear();
+$('btn-connect').onclick = connect;
+if (endpoint) connect();
+</script>
+</body>
+</html>

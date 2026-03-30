@@ -275,6 +275,22 @@ function renderPortCard(port, index) {
         setTimeout(() => { urlEl.textContent = wsUrl; }, 1000);
       };
       li.appendChild(urlEl);
+      if (s.data !== false) {
+        const termLink = document.createElement('a');
+        termLink.href = '/xterm/' + s.endpoint;
+        termLink.className = 'detect-link';
+        termLink.textContent = 'Terminal';
+        termLink.target = '_blank';
+        li.appendChild(el('span', ' '));
+        li.appendChild(termLink);
+        const rawLink = document.createElement('a');
+        rawLink.href = '/raw/' + s.endpoint;
+        rawLink.className = 'detect-link';
+        rawLink.textContent = 'Raw';
+        rawLink.target = '_blank';
+        li.appendChild(el('span', ' '));
+        li.appendChild(rawLink);
+      }
       if (s.data === false)
         li.appendChild(el('div', 'control only', 'control-signals'));
     }

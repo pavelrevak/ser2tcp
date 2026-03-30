@@ -34,7 +34,8 @@ def make_ws_client(addr=('127.0.0.1', 12345)):
     client.is_websocket = True
     client.ws_send = Mock()
     client.ws_close = Mock()
-    client.ws_message = None
+    client.ws_is_text = False
+    client.read_buffer = Mock(return_value=None)
     return client
 
 
@@ -133,7 +134,8 @@ class TestDataForwarding(unittest.TestCase):
     def test_receive_binary_forwards_to_serial(self):
         srv = make_ws_server()
         client = make_ws_client()
-        client.ws_message = b'\x01\x02\x03'
+        client.read_buffer.return_value = b'\x01\x02\x03'
+        client.ws_is_text = False
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.send.assert_called_with(b'\x01\x02\x03')
@@ -142,7 +144,8 @@ class TestDataForwarding(unittest.TestCase):
         srv = make_ws_server(
             data=False, control={'rts': True, 'signals': ['rts']})
         client = make_ws_client()
-        client.ws_message = b'\x01\x02'
+        client.read_buffer.return_value = b'\x01\x02'
+        client.ws_is_text = False
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.send.assert_not_called()
@@ -160,7 +163,8 @@ class TestControl(unittest.TestCase):
     def test_rts_command(self):
         srv = make_ws_server(control={'rts': True, 'signals': ['rts']})
         client = make_ws_client()
-        client.ws_message = json.dumps({'rts': True})
+        client.read_buffer.return_value = json.dumps({'rts': True}).encode()
+        client.ws_is_text = True
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.set_rts.assert_called_with(True)
@@ -168,7 +172,8 @@ class TestControl(unittest.TestCase):
     def test_dtr_command(self):
         srv = make_ws_server(control={'dtr': True, 'signals': ['dtr']})
         client = make_ws_client()
-        client.ws_message = json.dumps({'dtr': False})
+        client.read_buffer.return_value = json.dumps({'dtr': False}).encode()
+        client.ws_is_text = True
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.set_dtr.assert_called_with(False)
@@ -176,7 +181,8 @@ class TestControl(unittest.TestCase):
     def test_rts_ignored_when_not_enabled(self):
         srv = make_ws_server(control={'rts': False, 'signals': ['rts']})
         client = make_ws_client()
-        client.ws_message = json.dumps({'rts': True})
+        client.read_buffer.return_value = json.dumps({'rts': True}).encode()
+        client.ws_is_text = True
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.set_rts.assert_not_called()
@@ -184,7 +190,8 @@ class TestControl(unittest.TestCase):
     def test_control_ignored_without_config(self):
         srv = make_ws_server()  # no control
         client = make_ws_client()
-        client.ws_message = json.dumps({'rts': True})
+        client.read_buffer.return_value = json.dumps({'rts': True}).encode()
+        client.ws_is_text = True
         srv.add_connection(client)
         srv.process_message(client)
         srv._serial.set_rts.assert_not_called()
@@ -192,7 +199,8 @@ class TestControl(unittest.TestCase):
     def test_invalid_json_ignored(self):
         srv = make_ws_server(control={'rts': True, 'signals': ['rts']})
         client = make_ws_client()
-        client.ws_message = 'not json{'
+        client.read_buffer.return_value = b'not json{'
+        client.ws_is_text = True
         srv.add_connection(client)
         srv.process_message(client)  # should not raise
 

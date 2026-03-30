@@ -9,8 +9,6 @@ import serial.tools.list_ports as _list_ports
 
 import uhttp.server as _uhttp_server
 
-import uhttp.server as _uhttp_events
-
 import ser2tcp.http_auth as _http_auth
 import ser2tcp.connection_control as _control
 import ser2tcp.serial_proxy as _serial_proxy
@@ -65,7 +63,8 @@ class HttpServerWrapper():
                 self._log.info(
                     "HTTP server: %s:%d", address, port)
             self._servers.append(_uhttp_server.HttpServer(
-                address=address, port=port, ssl_context=ssl_context))
+                address=address, port=port, ssl_context=ssl_context,
+                event_mode=True))
 
     def read_sockets(self):
         """Return sockets for reading"""
@@ -82,31 +81,38 @@ class HttpServerWrapper():
         return sockets
 
     def process_read(self, read_sockets):
-        """Process read events"""
-        for server in self._servers:
-            client = server.process_events(read_sockets, [])
-            if client:
-                if client.event == _uhttp_events.EVENT_WS_REQUEST:
-                    self._handle_ws_upgrade(client)
-                elif client.event in (
-                        _uhttp_events.EVENT_WS_MESSAGE,
-                        _uhttp_events.EVENT_WS_CHUNK_FIRST,
-                        _uhttp_events.EVENT_WS_CHUNK_NEXT,
-                        _uhttp_events.EVENT_WS_CHUNK_LAST):
-                    ws_server = self._ws_clients.get(client)
-                    if ws_server:
-                        ws_server.process_message(client)
-                elif client.event == _uhttp_events.EVENT_WS_CLOSE:
-                    ws_server = self._ws_clients.pop(client, None)
-                    if ws_server:
-                        ws_server.remove_connection(client)
-                else:
-                    self._handle_request(client)
+        """Process read events - also handles writes for uhttp"""
+        self._process_uhttp(read_sockets, [])
 
     def process_write(self, write_sockets):
         """Process write events"""
+        self._process_uhttp([], write_sockets)
+
+    def _process_uhttp(self, read_sockets, write_sockets):
+        """Process uhttp events"""
         for server in self._servers:
-            server.process_events([], write_sockets)
+            client = server.process_events(read_sockets, write_sockets)
+            if client:
+                if client.event == _uhttp_server.EVENT_WS_REQUEST:
+                    self._handle_ws_upgrade(client)
+                elif client.event in (
+                        _uhttp_server.EVENT_WS_MESSAGE,
+                        _uhttp_server.EVENT_WS_CHUNK_FIRST,
+                        _uhttp_server.EVENT_WS_CHUNK_NEXT,
+                        _uhttp_server.EVENT_WS_CHUNK_LAST):
+                    ws_server = self._ws_clients.get(client)
+                    if ws_server:
+                        ws_server.process_message(client)
+                elif client.event == _uhttp_server.EVENT_WS_CLOSE:
+                    ws_server = self._ws_clients.pop(client, None)
+                    if ws_server:
+                        ws_server.remove_connection(client)
+                elif client.event == _uhttp_server.EVENT_HEADERS:
+                    client.accept_body()
+                elif client.event == _uhttp_server.EVENT_COMPLETE:
+                    self._handle_request(client)
+                elif client.event == _uhttp_server.EVENT_REQUEST:
+                    self._handle_request(client)
 
 
     def process_stale(self):
@@ -205,6 +211,15 @@ class HttpServerWrapper():
         # Logout endpoint
         if client.method == 'POST' and client.path == '/api/logout':
             self._handle_api_logout(client)
+            return
+        # WebSocket terminal clients
+        if client.method == 'GET' \
+                and client.path.startswith('/xterm/'):
+            client.respond_file(str(HTML_DIR / 'xterm.html'))
+            return
+        if client.method == 'GET' \
+                and client.path.startswith('/raw/'):
+            client.respond_file(str(HTML_DIR / 'raw.html'))
             return
         # Static files - no auth
         if client.method == 'GET' and not client.path.startswith('/api/'):

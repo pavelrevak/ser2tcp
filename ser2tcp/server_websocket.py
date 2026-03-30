@@ -105,11 +105,14 @@ class ServerWebSocket():
 
     def process_message(self, client):
         """Process incoming WebSocket message"""
-        msg = client.ws_message
-        if isinstance(msg, bytes) and self._data_enabled:
-            self._serial.send(msg)
-        elif isinstance(msg, str) and self._control:
-            self._process_control_message(client, msg)
+        data = client.read_buffer()
+        if not data:
+            return
+        if client.ws_is_text:
+            if self._control:
+                self._process_control_message(client, data.decode('utf-8'))
+        elif self._data_enabled:
+            self._serial.send(data)
 
     def _process_control_message(self, client, msg):
         """Process JSON control message from client"""
@@ -144,7 +147,7 @@ class ServerWebSocket():
     def process_stale(self):
         """Remove closed connections"""
         for client in list(self._connections):
-            if not client.is_websocket:
+            if not client.is_websocket or client.socket is None:
                 self.remove_connection(client)
 
     def send(self, data):
