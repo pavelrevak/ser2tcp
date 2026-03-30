@@ -252,7 +252,8 @@ class TestApiStatus(unittest.TestCase):
         wrapper = make_wrapper(serial_proxies=[])
         client = MockClient(path='/api/status')
         wrapper._handle_request(client)
-        self.assertEqual(client.responded, {'ports': []})
+        self.assertEqual(client.responded['ports'], [])
+        self.assertIn('admin', client.responded)
 
     def test_proxy_with_port(self):
         proxy = self._make_proxy(port='/dev/ttyUSB0', baudrate=115200)

@@ -279,11 +279,19 @@ class TestSessionManager(unittest.TestCase):
         mgr.delete_user('viewer')
         self.assertIsNone(mgr.authenticate(token))
 
-    def test_delete_last_admin_disables_auth(self):
+    def test_delete_last_admin_refused(self):
         mgr = self._make_manager(users=[
             self._make_user(login='admin', admin=True)])
+        result = mgr.delete_user('admin')
+        self.assertIsInstance(result, str)
+        self.assertIn('admin', result.lower())
+
+    def test_delete_last_admin_allowed_with_admin_token(self):
+        mgr = self._make_manager(
+            users=[self._make_user(login='admin', admin=True)],
+            tokens=[{'token': 'tok', 'name': 'api', 'admin': True}])
         self.assertTrue(mgr.delete_user('admin'))
-        self.assertTrue(mgr.is_empty)
+        self.assertFalse(mgr.is_empty)
 
     def test_delete_admin_when_another_exists(self):
         mgr = self._make_manager(users=[

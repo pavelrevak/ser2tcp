@@ -334,7 +334,7 @@ class HttpServerWrapper():
         if not user:
             return
         if client.method == 'GET' and client.path == '/api/status':
-            self._handle_api_status(client)
+            self._handle_api_status(client, user)
         elif client.method == 'GET' and client.path == '/api/detect':
             self._handle_api_detect(client)
         elif client.path == '/api/ports':
@@ -348,7 +348,7 @@ class HttpServerWrapper():
             self._route_api_ports_item(client, user)
         elif client.path == '/api/users':
             if client.method == 'GET':
-                self._handle_api_users_list(client)
+                self._handle_api_users_list(client, user)
             elif client.method == 'POST':
                 self._handle_api_users_add(client, user)
             else:
@@ -359,6 +359,21 @@ class HttpServerWrapper():
                 self._handle_api_users_update(client, user, login)
             elif client.method == 'DELETE':
                 self._handle_api_users_delete(client, user, login)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path == '/api/tokens':
+            if client.method == 'GET':
+                self._handle_api_tokens_list(client, user)
+            elif client.method == 'POST':
+                self._handle_api_tokens_add(client, user)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path.startswith('/api/tokens/'):
+            token_id = client.path[len('/api/tokens/'):]
+            if client.method == 'PUT':
+                self._handle_api_tokens_update(client, user, token_id)
+            elif client.method == 'DELETE':
+                self._handle_api_tokens_delete(client, user, token_id)
             else:
                 self._error(client, 'Method not allowed', 405)
         elif client.path == '/api/settings':
@@ -402,7 +417,7 @@ class HttpServerWrapper():
             return
         client.respond_file(str(file_path))
 
-    def _handle_api_status(self, client):
+    def _handle_api_status(self, client, user):
         """Return runtime status with connections"""
         ports = []
         for proxy in self._serial_proxies:
@@ -466,7 +481,8 @@ class HttpServerWrapper():
                     signals[name] = bool(bitmask & (1 << bit))
                 port_info['signals'] = signals
             ports.append(port_info)
-        client.respond({'ports': ports})
+        is_admin = user.get('admin', False) if user else False
+        client.respond({'ports': ports, 'admin': is_admin})
 
     def _handle_api_detect(self, client):
         """Return list of available serial ports"""
@@ -753,8 +769,6 @@ class HttpServerWrapper():
     def _handle_api_disconnect(self, client, user, port_idx,
             srv_idx, con_idx):
         """Disconnect a specific client connection"""
-        if not self._require_admin(client, user):
-            return
         if port_idx < 0 or port_idx >= len(self._serial_proxies):
             self._error(client, 'Port not found', 404)
             return
@@ -837,8 +851,10 @@ class HttpServerWrapper():
             config.pop('auth', None)
         self._save_config()
 
-    def _handle_api_users_list(self, client):
+    def _handle_api_users_list(self, client, user):
         """List users (without passwords)"""
+        if not self._require_admin(client, user):
+            return
         if not self._auth:
             client.respond([])
             return
@@ -916,6 +932,80 @@ class HttpServerWrapper():
             return
         self._save_auth_config()
         self._log.info("User deleted: %s", login)
+        client.respond({'ok': True})
+
+    def _handle_api_tokens_list(self, client, user):
+        """List API tokens"""
+        if not self._require_admin(client, user):
+            return
+        if not self._auth:
+            client.respond([])
+            return
+        client.respond(self._auth.list_tokens())
+
+    def _handle_api_tokens_add(self, client, user):
+        """Add new API token"""
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        if not isinstance(data, dict) or 'token' not in data \
+                or 'name' not in data:
+            self._error(client, 'token and name required', 400)
+            return
+        auth = self._ensure_auth()
+        admin = bool(data.get('admin', False))
+        if not auth.add_token(data['token'], data['name'], admin):
+            self._error(client, 'Token already exists', 400)
+            return
+        self._save_auth_config()
+        self._log.info("Token added: %s", data['name'])
+        client.respond({'ok': True}, status=201)
+
+    def _handle_api_tokens_update(self, client, user, token):
+        """Update API token"""
+        if not self._auth:
+            self._error(client, 'Token not found', 404)
+            return
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        if not isinstance(data, dict):
+            self._error(client, 'Invalid request', 400)
+            return
+        kwargs = {}
+        if 'token' in data:
+            kwargs['token'] = data['token']
+        if 'name' in data:
+            kwargs['name'] = data['name']
+        if 'admin' in data:
+            kwargs['admin'] = bool(data['admin'])
+        result = self._auth.update_token(token, **kwargs)
+        if result is False:
+            self._error(client, 'Token not found', 404)
+            return
+        if isinstance(result, str):
+            self._error(client, result, 400)
+            return
+        self._save_auth_config()
+        self._log.info("Token updated: %s", token[:8] + '...')
+        client.respond({'ok': True})
+
+    def _handle_api_tokens_delete(self, client, user, token):
+        """Delete API token"""
+        if not self._auth:
+            self._error(client, 'Token not found', 404)
+            return
+        if not self._require_admin(client, user):
+            return
+        result = self._auth.delete_token(token)
+        if result is False:
+            self._error(client, 'Token not found', 404)
+            return
+        if isinstance(result, str):
+            self._error(client, result, 400)
+            return
+        self._save_auth_config()
+        self._log.info("Token deleted: %s", token[:8] + '...')
         client.respond({'ok': True})
 
     def _handle_api_settings_get(self, client):

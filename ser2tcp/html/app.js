@@ -70,6 +70,7 @@ async function hashPassword(password) {
 
 let token = localStorage.getItem('ser2tcp_token');
 let username = localStorage.getItem('ser2tcp_user');
+let isAdmin = false;
 let detectedPorts = [];
 let usedPorts = [];  // [{address, port, index}] from status
 let usedEndpoints = [];  // [{endpoint, index}] from status
@@ -127,9 +128,15 @@ function showApp(initialData) {
   $('login-view').classList.add('hidden');
   $('app').classList.remove('hidden');
   document.querySelector('.topbar').classList.remove('hidden');
+  isAdmin = initialData?.admin || false;
+  // Show/hide Users tab based on admin status
+  const usersTab = document.querySelector('nav button[data-tab="users"]');
+  if (usersTab) usersTab.classList.toggle('hidden', !isAdmin);
   updateUserInfo();
   const hash = location.hash.slice(1);
-  if (['users', 'settings'].includes(hash)) {
+  if (hash === 'users' && !isAdmin) {
+    switchTab('ports', initialData);
+  } else if (['users', 'settings'].includes(hash)) {
     switchTab(hash);
   } else {
     // ports tab - check for edit/new
@@ -1246,67 +1253,248 @@ function deletePort(index) {
   });
 }
 
-// --- Users ---
+// --- Users & Tokens ---
+let currentUsers = [];
+let currentTokens = [];
+
 function loadUsers() {
-  const root = $('users-content');
-  const adminCb = $('new-admin');
-  api('GET', '/api/users').then(users => {
-    root.replaceChildren();
-    if (!users.length) {
-      root.replaceChildren(el('p', 'No users configured', 'empty'));
-      adminCb.checked = true;
-      adminCb.disabled = true;
-      return;
-    }
-    adminCb.checked = false;
-    adminCb.disabled = false;
-    const table = el('table');
-    const thead = el('thead');
-    const hr = el('tr');
-    ['Login', 'Admin', ''].forEach(t => hr.appendChild(el('th', t)));
-    thead.appendChild(hr);
-    table.appendChild(thead);
-    const tbody = el('tbody');
-    users.forEach(u => {
-      const tr = el('tr');
-      tr.appendChild(el('td', u.login));
-      const adminTd = el('td');
-      if (u.admin) {
-        const b = el('span', 'admin');
-        b.className = 'badge badge-admin';
-        adminTd.appendChild(b);
-      }
-      tr.appendChild(adminTd);
-      const actionsTd = el('td');
-      const chpBtn = el('button', 'Password');
-      chpBtn.className = 'btn-primary btn-small';
-      chpBtn.onclick = () => changePassword(u.login);
-      actionsTd.appendChild(chpBtn);
-      actionsTd.appendChild(document.createTextNode(' '));
-      const delBtn = el('button', 'Delete');
-      delBtn.className = 'btn-danger btn-small';
-      delBtn.onclick = () => deleteUser(u.login);
-      actionsTd.appendChild(delBtn);
-      tr.appendChild(actionsTd);
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-    root.appendChild(table);
-  }).catch(() => {
-    root.replaceChildren(el('p', 'Failed to load users', 'empty'));
-    adminCb.checked = true;
-    adminCb.disabled = true;
+  Promise.all([
+    api('GET', '/api/users').catch(() => []),
+    api('GET', '/api/tokens').catch(() => []),
+  ]).then(([users, tokens]) => {
+    currentUsers = users;
+    currentTokens = tokens;
+    renderUsers();
   });
 }
 
-async function changePassword(login) {
-  const pass = prompt('New password for ' + login + ':');
-  if (pass) {
-    const hashed = await hashPassword(pass);
-    api('PUT', '/api/users/' + encodeURIComponent(login), {password: hashed})
-      .then(loadUsers)
-      .catch(alert);
+function renderUsers() {
+  const root = $('users-content');
+  root.replaceChildren();
+
+  // Users section
+  if (currentUsers.length) {
+    const usersHeader = el('h3', 'Users', 'section-header');
+    root.appendChild(usersHeader);
+    currentUsers.forEach(u => root.appendChild(renderUserCard(u)));
   }
+
+  // Tokens section
+  if (currentTokens.length) {
+    const tokensHeader = el('h3', 'API Tokens', 'section-header');
+    root.appendChild(tokensHeader);
+    currentTokens.forEach(t => root.appendChild(renderTokenCard(t)));
+  }
+
+  if (!currentUsers.length && !currentTokens.length) {
+    root.appendChild(el('p', 'No users or tokens configured', 'empty'));
+  }
+}
+
+function renderUserCard(user) {
+  const card = document.createElement('div');
+  card.className = 'section';
+  card.dataset.userLogin = user.login;
+  const adminBadge = user.admin ? '<span class="badge badge-admin">admin</span>' : '';
+  card.innerHTML = `
+    <button class="btn-edit" title="Edit">&#9998;</button>
+    <h2>${user.login} ${adminBadge}</h2>
+  `;
+  card.querySelector('.btn-edit').addEventListener('click', () => showUserEditor(user.login, user));
+  return card;
+}
+
+function renderTokenCard(tok) {
+  const card = document.createElement('div');
+  card.className = 'section';
+  card.dataset.tokenId = tok.token;
+  const adminBadge = tok.admin ? '<span class="badge badge-admin">admin</span>' : '';
+  const maskedToken = tok.token.slice(0, 8) + '...' + tok.token.slice(-4);
+  card.innerHTML = `
+    <button class="btn-edit" title="Edit">&#9998;</button>
+    <h2>${tok.name} ${adminBadge}</h2>
+    <p class="token-value" title="Click to copy">${maskedToken}</p>
+  `;
+  card.querySelector('.btn-edit').addEventListener('click', () => showTokenEditor(tok.token, tok));
+  card.querySelector('.token-value').addEventListener('click', () => {
+    navigator.clipboard.writeText(tok.token).then(() => {
+      const tv = card.querySelector('.token-value');
+      tv.classList.add('copied');
+      setTimeout(() => tv.classList.remove('copied'), 1000);
+    });
+  });
+  return card;
+}
+
+function showUserEditor(login, user) {
+  const container = $('users-content');
+  const isNew = login === null;
+  let card;
+  if (isNew) {
+    card = document.createElement('div');
+    container.appendChild(card);
+  } else {
+    card = container.querySelector('[data-user-login="' + login + '"]');
+  }
+  card.className = 'section user-edit';
+  card.dataset.userLogin = isNew ? 'new' : login;
+  const title = isNew ? 'New User' : 'Edit User';
+  const firstUser = currentUsers.length === 0;
+  card.innerHTML = `
+    <h3>${title}</h3>
+    <div class="field-row">
+      <label>Login:</label>
+      <input type="text" class="user-login" value="${user.login || ''}" ${isNew ? '' : 'disabled'} autocomplete="off">
+    </div>
+    <div class="field-row">
+      <label>${isNew ? 'Password:' : 'New password:'}</label>
+      <input type="password" class="user-password" placeholder="${isNew ? '' : 'leave empty to keep'}" autocomplete="new-password">
+    </div>
+    <div class="field-row">
+      <label><input type="checkbox" class="user-admin" ${user.admin || firstUser ? 'checked' : ''} ${firstUser ? 'disabled' : ''}> Admin</label>
+    </div>
+    <div class="user-error error hidden"></div>
+    <div class="edit-buttons">
+      <button type="button" class="btn-primary user-save-btn">Save</button>
+      ${!isNew ? '<button type="button" class="btn-danger user-delete-btn">Delete</button>' : ''}
+      <button type="button" class="user-cancel-btn">Cancel</button>
+    </div>
+  `;
+  card.querySelector('.user-save-btn').addEventListener('click', () => saveUser(isNew ? null : login, card));
+  card.querySelector('.user-cancel-btn').addEventListener('click', () => loadUsers());
+  if (!isNew) {
+    card.querySelector('.user-delete-btn').addEventListener('click', () => deleteUser(login));
+  }
+  card.querySelector('.user-login').focus();
+}
+
+function showTokenEditor(tokenId, tok) {
+  const container = $('users-content');
+  const isNew = tokenId === null;
+  let card;
+  if (isNew) {
+    card = document.createElement('div');
+    container.appendChild(card);
+  } else {
+    card = container.querySelector('[data-token-id="' + tokenId + '"]');
+  }
+  card.className = 'section user-edit';
+  card.dataset.tokenId = isNew ? 'new' : tokenId;
+  const title = isNew ? 'New API Token' : 'Edit API Token';
+  const tokenValue = tok.token || generateToken();
+  card.innerHTML = `
+    <h3>${title}</h3>
+    <div class="field-row">
+      <label>Name:</label>
+      <input type="text" class="token-name" value="${tok.name || ''}" autocomplete="off">
+    </div>
+    <div class="field-row">
+      <label>Token:</label>
+      <input type="text" class="token-value-input" value="${tokenValue}" autocomplete="off">
+      <button type="button" class="btn-icon token-generate-btn" title="Generate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></button>
+      <button type="button" class="btn-icon token-copy-btn" title="Copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+    </div>
+    <div class="field-row">
+      <label><input type="checkbox" class="token-admin" ${tok.admin ? 'checked' : ''}> Admin</label>
+    </div>
+    <div class="token-error error hidden"></div>
+    <div class="edit-buttons">
+      <button type="button" class="btn-primary token-save-btn">Save</button>
+      ${!isNew ? '<button type="button" class="btn-danger token-delete-btn">Delete</button>' : ''}
+      <button type="button" class="token-cancel-btn">Cancel</button>
+    </div>
+  `;
+  card.querySelector('.token-generate-btn').addEventListener('click', () => {
+    card.querySelector('.token-value-input').value = generateToken();
+  });
+  card.querySelector('.token-copy-btn').addEventListener('click', () => {
+    const input = card.querySelector('.token-value-input');
+    navigator.clipboard.writeText(input.value).then(() => {
+      const btn = card.querySelector('.token-copy-btn');
+      const origSvg = btn.innerHTML;
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+      setTimeout(() => btn.innerHTML = origSvg, 1000);
+    });
+  });
+  card.querySelector('.token-save-btn').addEventListener('click', () => saveToken(isNew ? null : tokenId, card));
+  card.querySelector('.token-cancel-btn').addEventListener('click', () => loadUsers());
+  if (!isNew) {
+    card.querySelector('.token-delete-btn').addEventListener('click', () => deleteToken(tokenId));
+  }
+  card.querySelector('.token-name').focus();
+}
+
+function generateToken() {
+  const arr = new Uint8Array(32);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function saveUser(login, card) {
+  const isNew = login === null;
+  const newLogin = card.querySelector('.user-login').value.trim();
+  const password = card.querySelector('.user-password').value;
+  const admin = card.querySelector('.user-admin').checked;
+  const errEl = card.querySelector('.user-error');
+  errEl.classList.add('hidden');
+
+  if (!newLogin) {
+    errEl.textContent = 'Login is required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (isNew && !password) {
+    errEl.textContent = 'Password is required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const data = {admin};
+  if (isNew) data.login = newLogin;
+  if (password) data.password = await hashPassword(password);
+
+  const method = isNew ? 'POST' : 'PUT';
+  const path = isNew ? '/api/users' : '/api/users/' + encodeURIComponent(login);
+
+  api(method, path, data).then(response => {
+    if (response.token) setCredentials(response.token, newLogin);
+    loadUsers();
+  }).catch(e => {
+    errEl.textContent = e;
+    errEl.classList.remove('hidden');
+  });
+}
+
+function saveToken(tokenId, card) {
+  const isNew = tokenId === null;
+  const name = card.querySelector('.token-name').value.trim();
+  const tokenValue = card.querySelector('.token-value-input').value.trim();
+  const admin = card.querySelector('.token-admin').checked;
+  const errEl = card.querySelector('.token-error');
+  errEl.classList.add('hidden');
+
+  if (!name) {
+    errEl.textContent = 'Name is required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+  if (!tokenValue) {
+    errEl.textContent = 'Token is required';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  const data = {name, admin, token: tokenValue};
+
+  const method = isNew ? 'POST' : 'PUT';
+  const path = isNew ? '/api/tokens' : '/api/tokens/' + encodeURIComponent(tokenId);
+
+  api(method, path, data).then(() => {
+    loadUsers();
+  }).catch(e => {
+    errEl.textContent = e;
+    errEl.classList.remove('hidden');
+  });
 }
 
 function deleteUser(login) {
@@ -1319,28 +1507,22 @@ function deleteUser(login) {
   });
 }
 
-async function addUser() {
-  const login = $('new-login').value;
-  const password = $('new-pass').value;
-  const admin = $('new-admin').checked;
-  const errEl = $('user-error');
-  errEl.classList.add('hidden');
-  if (!login || !password) {
-    errEl.textContent = 'Login and password required';
-    errEl.classList.remove('hidden');
-    return;
-  }
-  const hashed = await hashPassword(password);
-  api('POST', '/api/users', {login, password: hashed, admin}).then(data => {
-    if (data.token) setCredentials(data.token, login);
-    $('new-login').value = '';
-    $('new-pass').value = '';
-    $('new-admin').checked = false;
+function deleteToken(tokenId) {
+  if (!confirm('Delete this token?')) return;
+  api('DELETE', '/api/tokens/' + encodeURIComponent(tokenId)).then(() => {
     loadUsers();
   }).catch(e => {
-    errEl.textContent = e;
-    errEl.classList.remove('hidden');
+    if (e !== 'unauthorized') alert(e);
   });
+}
+
+function addUser() {
+  const firstUser = currentUsers.length === 0;
+  showUserEditor(null, {admin: firstUser});
+}
+
+function addToken() {
+  showTokenEditor(null, {});
 }
 
 // --- Settings ---
@@ -1534,6 +1716,7 @@ function init() {
     e => { if (e.key === 'Enter') doLogin(); });
   $('logout-btn').addEventListener('click', doLogout);
   $('add-user-btn').addEventListener('click', addUser);
+  $('add-token-btn').addEventListener('click', addToken);
   $('add-port-btn').addEventListener('click', addPort);
   $('add-http-btn').addEventListener('click', addHttpServer);
 

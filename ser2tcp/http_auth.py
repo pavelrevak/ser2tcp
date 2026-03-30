@@ -134,7 +134,8 @@ class SessionManager():
             return False
         if 'admin' in kwargs and not kwargs['admin']:
             if user.get('admin') and self._admin_count() <= 1:
-                return 'Cannot remove last admin'
+                if self._admin_token_count() == 0:
+                    return 'Cannot remove last admin'
         if 'password' in kwargs:
             user['password'] = ensure_hashed(kwargs['password'])
         if 'admin' in kwargs:
@@ -147,11 +148,18 @@ class SessionManager():
         """Count admin users"""
         return sum(1 for u in self._users.values() if u.get('admin'))
 
+    def _admin_token_count(self):
+        """Count admin tokens"""
+        return sum(1 for t in self._tokens.values() if t.get('admin'))
+
     def delete_user(self, login):
-        """Delete user, return True on success, False if not found.
-        Deleting last admin disables authentication."""
+        """Delete user, return True on success, False/string on error"""
         if login not in self._users:
             return False
+        user = self._users[login]
+        if user.get('admin') and self._admin_count() <= 1:
+            if self._admin_token_count() == 0:
+                return 'Cannot delete last admin'
         del self._users[login]
         # Invalidate all sessions for this user
         to_remove = [
@@ -159,6 +167,50 @@ class SessionManager():
             if s['login'] == login]
         for token in to_remove:
             del self._sessions[token]
+        return True
+
+    def list_tokens(self):
+        """Return list of API tokens"""
+        return list(self._tokens.values())
+
+    def add_token(self, token, name, admin=False):
+        """Add API token, return True on success, False if exists"""
+        if token in self._tokens:
+            return False
+        self._tokens[token] = {'token': token, 'name': name, 'admin': admin}
+        return True
+
+    def update_token(self, token, **kwargs):
+        """Update API token, return True on success, False/string on error"""
+        token_cfg = self._tokens.get(token)
+        if not token_cfg:
+            return False
+        if 'admin' in kwargs and not kwargs['admin']:
+            if token_cfg.get('admin') and self._admin_token_count() <= 1:
+                if self._admin_count() == 0:
+                    return 'Cannot remove last admin'
+        new_token = kwargs.get('token')
+        if new_token and new_token != token:
+            if new_token in self._tokens:
+                return 'Token already exists'
+            del self._tokens[token]
+            token_cfg['token'] = new_token
+            self._tokens[new_token] = token_cfg
+        if 'name' in kwargs:
+            token_cfg['name'] = kwargs['name']
+        if 'admin' in kwargs:
+            token_cfg['admin'] = kwargs['admin']
+        return True
+
+    def delete_token(self, token):
+        """Delete API token, return True on success, False/string on error"""
+        if token not in self._tokens:
+            return False
+        token_cfg = self._tokens[token]
+        if token_cfg.get('admin') and self._admin_token_count() <= 1:
+            if self._admin_count() == 0:
+                return 'Cannot delete last admin'
+        del self._tokens[token]
         return True
 
     def get_auth_config(self):

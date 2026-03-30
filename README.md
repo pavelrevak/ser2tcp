@@ -54,8 +54,10 @@ pip uninstall ser2tcp
   --hash-password PASSWORD
                         Hash password for config file and exit
   -c CONFIG, --config CONFIG
-                        configuration in JSON format
+                        configuration in JSON format (default: ~/.config/ser2tcp/config.json)
 ```
+
+If no config file is specified and default config doesn't exist, creates one with HTTP server on first free port from 20080.
 
 ### Verbose
 
@@ -299,30 +301,36 @@ Optional HTTP server for monitoring and management:
 ```json
 {
     "http": [
-        {"address": "0.0.0.0", "port": 8080}
+        {"name": "main", "address": "0.0.0.0", "port": 8080}
     ]
 }
 ```
 
-With authentication:
+- `name`: optional label for the server (displayed in web UI Settings tab)
+- HTTP servers can be added/removed/modified via web UI without restart
+
+With authentication (configured at root level, shared across all HTTP servers):
 
 ```json
 {
-    "http": [{
-        "address": "0.0.0.0",
-        "port": 8080,
-        "auth": {
-            "session_timeout": 3600,
-            "users": [
-                {"login": "admin", "password": "sha256:...", "admin": true}
-            ],
-            "tokens": [
-                {"token": "my-api-key", "name": "monitoring"}
-            ]
-        }
-    }]
+    "http": [
+        {"address": "0.0.0.0", "port": 8080}
+    ],
+    "users": [
+        {"login": "admin", "password": "sha256:...", "admin": true}
+    ],
+    "tokens": [
+        {"token": "my-api-key", "name": "monitoring", "admin": false}
+    ],
+    "session_timeout": 3600
 }
 ```
+
+- `users`: login credentials with optional `admin` flag and per-user `session_timeout`
+- `tokens`: permanent API tokens for automation (no expiration)
+- `session_timeout`: global default session timeout in seconds
+- First user added (via CLI or web UI) is automatically admin
+- Cannot delete last admin (user or token) — at least one admin must exist
 
 Generate password hash:
 
@@ -364,20 +372,31 @@ With IP filtering:
 | POST | `/api/logout` | no | Invalidate session |
 | GET | `/api/status` | yes | Runtime status (serial ports, servers, connections) |
 | GET | `/api/detect` | yes | Available serial ports with USB/device attributes |
+| GET | `/api/signals` | yes | Signal states for all ports |
+| GET | `/api/settings` | yes | Get settings (http servers, session_timeout) |
+| DELETE | `/api/ports/<p>/connections/<s>/<c>` | yes | Disconnect client |
 | POST | `/api/ports` | admin | Add new port configuration |
 | PUT | `/api/ports/<index>` | admin | Update port configuration |
 | DELETE | `/api/ports/<index>` | admin | Delete port configuration |
-| DELETE | `/api/ports/<p>/connections/<s>/<c>` | admin | Disconnect client |
 | PUT | `/api/ports/<index>/signals` | admin | Set RTS/DTR signals |
-| GET | `/api/signals` | yes | Signal states for all ports |
-| GET | `/api/users` | yes | List users |
+| GET | `/api/users` | admin | List users |
 | POST | `/api/users` | admin | Add user |
 | PUT | `/api/users/<login>` | admin | Update user |
 | DELETE | `/api/users/<login>` | admin | Delete user |
+| GET | `/api/tokens` | admin | List API tokens |
+| POST | `/api/tokens` | admin | Add API token |
+| PUT | `/api/tokens/<token>` | admin | Update API token |
+| DELETE | `/api/tokens/<token>` | admin | Delete API token |
+| PUT | `/api/settings` | admin | Update session_timeout |
+| POST | `/api/settings/http` | admin | Add HTTP server |
+| PUT | `/api/settings/http/<index>` | admin | Update HTTP server |
+| DELETE | `/api/settings/http/<index>` | admin | Delete HTTP server |
 | GET | `/xterm/<endpoint>` | no | WebSocket VT100 terminal |
 | GET | `/raw/<endpoint>` | no | WebSocket raw terminal |
 
-Authentication: `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Without `auth` configuration, all endpoints are accessible without authentication.
+Auth levels: `no` = public, `yes` = any authenticated user, `admin` = admin user/token only.
+
+Authentication: `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Without users/tokens configured, all endpoints are accessible without authentication.
 
 ## Usage examples
 
@@ -407,7 +426,7 @@ telnet localhost 10002
     ```
     cp ser2tcp.service ~/.config/systemd/user/
     ```
-2. Create configuration file `~/.config/ser2tcp.conf`
+2. Configuration file will be created automatically at `~/.config/ser2tcp/config.json` on first run
 3. Reload user systemd services:
     ```
     systemctl --user daemon-reload

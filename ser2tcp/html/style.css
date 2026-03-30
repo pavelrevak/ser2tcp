@@ -115,7 +115,7 @@ h1 { color: var(--text); margin: 0; font-size: 1.4em; font-weight: 600; }
   font-weight: 600; color: var(--text); }
 .topbar nav button:hover { color: var(--accent); }
 .content { padding: 1em 1.5em; }
-#ports-content, #http-servers { display: grid;
+#ports-content, #http-servers, #users-content { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 0.8em; }
 .section { background: var(--bg-card); padding: 0.8em 1em; margin: 0;
@@ -150,6 +150,11 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
   color: var(--text-secondary); }
 .btn-secondary:hover { background: var(--bg-server); }
 .btn-small { padding: 0.2em 0.6em; font-size: 0.85em; }
+.btn-icon { padding: 0.3em; width: 2em; height: 2em; display: inline-flex;
+  align-items: center; justify-content: center; background: var(--bg-server);
+  border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+.btn-icon:hover { background: var(--accent); color: #fff; }
+.btn-icon svg { width: 1.2em; height: 1.2em; }
 .login-box { max-width: 320px; margin: 6em auto; padding: 0 1em; }
 .login-box input { width: 100%; margin-bottom: 0.5em; box-sizing: border-box; }
 .login-box button { width: 100%; }
@@ -193,12 +198,21 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .empty { color: var(--text-muted); font-style: italic; }
 
 /* Port editor */
-.port-edit, .http-edit { background: var(--bg-card); padding: 1em 1.2em; margin: 0;
+.section-header { color: var(--text-secondary); font-size: 0.85em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em; margin: 1.5em 0 0.5em;
+  padding: 0 0.5em; grid-column: 1 / -1; }
+.section-header:first-child { margin-top: 0; }
+.token-value { font-family: monospace; font-size: 0.9em; color: var(--text-secondary);
+  cursor: pointer; margin: 0.3em 0; transition: color 0.2s; }
+.token-value:hover { color: var(--primary); }
+.token-value.copied { color: var(--success); }
+.token-value.copied::after { content: ' (copied)'; font-family: inherit; }
+.port-edit, .http-edit, .user-edit { background: var(--bg-card); padding: 1em 1.2em; margin: 0;
   border-radius: 8px; box-shadow: 0 1px 4px var(--shadow);
   border: 2px solid var(--edit-border); grid-column: 1 / -1; }
-.port-edit h3, .http-edit h3 { margin: 0.8em 0 0.3em; color: var(--text-secondary);
+.port-edit h3, .http-edit h3, .user-edit h3 { margin: 0.8em 0 0.3em; color: var(--text-secondary);
   font-size: 0.95em; font-weight: 600; }
-.port-edit h3:first-child, .http-edit h3:first-child { margin-top: 0; }
+.port-edit h3:first-child, .http-edit h3:first-child, .user-edit h3:first-child { margin-top: 0; }
 .edit-buttons { display: flex; gap: 0.5em; margin-top: 1em; }
 .field-row { display: flex; align-items: center; gap: 0.5em;
   margin: 0.4em 0; flex-wrap: wrap; }
@@ -206,6 +220,7 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
   font-size: 0.9em; }
 .field-row input[type="text"],
 .field-row input[type="number"],
+.field-row input[type="password"],
 .field-row select { flex: 1; min-width: 8em; max-width: 20em; }
 .field-row input:disabled, .field-row select:disabled {
   background: var(--input-disabled-bg); color: var(--input-disabled-text); }
