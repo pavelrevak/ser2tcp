@@ -91,6 +91,7 @@
     --input-disabled-text: #555;
     --toolbar-bg: #242424;
   }
+  :root:not([data-theme="light"]) input[type="number"] { color-scheme: dark; }
 }
 
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
@@ -219,9 +220,10 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .field-row label { min-width: 7em; color: var(--text-secondary);
   font-size: 0.9em; }
 .field-row input[type="text"],
-.field-row input[type="number"],
 .field-row input[type="password"],
 .field-row select { flex: 1; min-width: 8em; max-width: 20em; }
+.field-row input[type="number"] { width: 6em; min-width: 6em; }
+[data-theme="dark"] input[type="number"] { color-scheme: dark; }
 .field-row input:disabled, .field-row select:disabled {
   background: var(--input-disabled-bg); color: var(--input-disabled-text); }
 .match-row { display: flex; align-items: center; gap: 0.5em; margin: 0.2em 0; }

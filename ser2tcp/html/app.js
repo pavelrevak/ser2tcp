@@ -519,6 +519,7 @@ function buildConfigFromStatus(port) {
   const ser = port.serial || {};
   const config = {serial: {}};
   if (port.name) config.name = port.name;
+  if (port.max_connections !== undefined) config.max_connections = port.max_connections;
   if (ser.match) {
     config.serial.match = {...ser.match};
   }
@@ -539,6 +540,7 @@ function buildConfigFromStatus(port) {
       if (s.ssl) srv.ssl = s.ssl;
     }
     if (s.control) srv.control = s.control;
+    if (s.max_connections !== undefined) srv.max_connections = s.max_connections;
     return srv;
   });
   if (!config.servers.length) {
@@ -725,6 +727,21 @@ function showPortEditor(index, config, skipHistory) {
   });
   stopRow.appendChild(stopSel);
   container.appendChild(stopRow);
+
+  // Port-level max connections
+  const portMaxRow = el('div', null, 'field-row');
+  portMaxRow.appendChild(el('label', 'Max clients (port):'));
+  const portMaxInput = document.createElement('input');
+  portMaxInput.type = 'number';
+  portMaxInput.id = 'edit-max-connections';
+  portMaxInput.min = '0';
+  portMaxInput.step = '1';
+  portMaxInput.inputMode = 'numeric';
+  portMaxInput.placeholder = '0 (unlimited)';
+  portMaxInput.value = config.max_connections !== undefined ? config.max_connections : '';
+  portMaxInput.title = 'Total clients across all servers on this port (0 = unlimited)';
+  portMaxRow.appendChild(portMaxInput);
+  container.appendChild(portMaxRow);
 
   // --- Servers section ---
   container.appendChild(el('h3', 'Servers'));
@@ -1024,6 +1041,21 @@ function renderServerBox(srv, index, total) {
   ipDiv.appendChild(ipDenyRow);
   box.appendChild(ipDiv);
 
+  // Max connections
+  const maxConnRow = el('div', null, 'field-row');
+  maxConnRow.appendChild(el('label', 'Max clients:'));
+  const maxConnInput = document.createElement('input');
+  maxConnInput.type = 'number';
+  maxConnInput.className = 'srv-max-connections';
+  maxConnInput.min = '0';
+  maxConnInput.step = '1';
+  maxConnInput.inputMode = 'numeric';
+  maxConnInput.placeholder = '0';
+  maxConnInput.value = srv.max_connections !== undefined ? srv.max_connections : '';
+  maxConnInput.title = '0 = unlimited, default is 5';
+  maxConnRow.appendChild(maxConnInput);
+  box.appendChild(maxConnRow);
+
   // Update visibility based on protocol
   const updateProtoFields = () => {
     const proto = protoSel.value;
@@ -1145,6 +1177,12 @@ function collectConfig() {
   const name = $('edit-name').value.trim();
   if (name) config.name = name;
 
+  // Port-level max connections
+  const portMaxConn = $('edit-max-connections').value.trim();
+  if (portMaxConn !== '') {
+    config.max_connections = parseInt(portMaxConn);
+  }
+
   // Serial
   const anyMatch = document.querySelectorAll('.match-cb:checked').length > 0;
   if (anyMatch) {
@@ -1218,6 +1256,11 @@ function collectConfig() {
       if (denyStr) {
         srv.deny = denyStr.split(',').map(s => s.trim()).filter(s => s);
       }
+    }
+    // Max connections
+    const maxConn = box.querySelector('.srv-max-connections').value.trim();
+    if (maxConn !== '') {
+      srv.max_connections = parseInt(maxConn);
     }
     config.servers.push(srv);
   });

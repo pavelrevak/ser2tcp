@@ -39,6 +39,7 @@ class Server():
         self._buffer_limit = self._config.get('buffer_limit')
         self._control = self._config.get('control')
         self._data_enabled = self._config.get('data', True)
+        self._max_connections = self._config.get('max_connections', 0)
         self._ip_filter = _ip_filter.create_filter(self._config, log=self._log)
         self._ssl_context = None
         self._socket = None
@@ -115,6 +116,11 @@ class Server():
         return self._data_enabled
 
     @property
+    def max_connections(self):
+        """Return max connections limit (0 = unlimited)"""
+        return self._max_connections
+
+    @property
     def connections(self):
         """Return list of connections"""
         return self._connections
@@ -126,6 +132,16 @@ class Server():
             addr = (self._config['address'],)
         elif self._ip_filter and not self._ip_filter.is_allowed(addr[0]):
             self._log.info("Client rejected (IP filter): %s:%d", addr[0], addr[1])
+            sock.close()
+            return
+        if self._max_connections > 0 and len(self._connections) >= self._max_connections:
+            self._log.info(
+                "Client rejected (server limit): %s:%d", addr[0], addr[1])
+            sock.close()
+            return
+        if not self._serial.can_add_connection():
+            self._log.info(
+                "Client rejected (port limit): %s:%d", addr[0], addr[1])
             sock.close()
             return
         kwargs = {

@@ -432,6 +432,8 @@ class HttpServerWrapper():
             port_info = {'serial': serial_info}
             if proxy.name:
                 port_info['name'] = proxy.name
+            if proxy.max_connections:
+                port_info['max_connections'] = proxy.max_connections
             if proxy.match:
                 port_info['serial']['match'] = proxy.match
             servers = []
@@ -471,6 +473,8 @@ class HttpServerWrapper():
                     srv_info['data'] = False
                 if server.control:
                     srv_info['control'] = server.control
+                if server.max_connections:
+                    srv_info['max_connections'] = server.max_connections
                 servers.append(srv_info)
             port_info['servers'] = servers
             if proxy.is_connected:
@@ -581,6 +585,11 @@ class HttpServerWrapper():
             return 'Invalid serial config'
         if 'port' not in serial and 'match' not in serial:
             return "serial config must have 'port' or 'match'"
+        # Validate port-level max_connections (0 = unlimited, default)
+        if 'max_connections' in data:
+            max_conn = data['max_connections']
+            if not isinstance(max_conn, int) or max_conn < 0:
+                return 'max_connections must be 0 or positive integer'
         if 'servers' not in data or not isinstance(data['servers'], list):
             return 'servers list required'
         if not data['servers']:
@@ -624,6 +633,11 @@ class HttpServerWrapper():
                     for network in srv[key]:
                         if not isinstance(network, str):
                             return f'{key} entries must be strings'
+            # Validate max_connections (0 = unlimited)
+            if 'max_connections' in srv:
+                max_conn = srv['max_connections']
+                if not isinstance(max_conn, int) or max_conn < 0:
+                    return 'max_connections must be 0 or positive integer'
         return None
 
     def _get_used_endpoints(self, exclude_index=None):

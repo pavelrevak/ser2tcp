@@ -50,6 +50,7 @@ class SerialProxy():
         self._signal_poll_interval = 0.1
         self._has_control_servers = False
         self._name = config.get('name', '')
+        self._max_connections = config.get('max_connections', 0)
         self._match = config['serial'].get('match')
         self._serial_config = self._init_serial_config(config['serial'])
         port = self._serial_config.get('port')
@@ -195,6 +196,11 @@ class SerialProxy():
         """Return list of servers"""
         return self._servers
 
+    @property
+    def max_connections(self):
+        """Return max connections limit (0 = unlimited)"""
+        return self._max_connections
+
     def connect(self):
         """Connect to serial port"""
         if not self._serial:
@@ -221,6 +227,16 @@ class SerialProxy():
             if server.has_connections():
                 return True
         return False
+
+    def total_connections(self):
+        """Return total number of connections across all servers"""
+        return sum(len(server.connections) for server in self._servers)
+
+    def can_add_connection(self):
+        """Check if new connection can be added (port-level limit)"""
+        if self._max_connections > 0:
+            return self.total_connections() < self._max_connections
+        return True
 
     def disconnect(self):
         """Disconnect serial port, but if there are no active connections"""

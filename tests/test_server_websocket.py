@@ -8,7 +8,9 @@ from ser2tcp.server import ConfigError
 from ser2tcp.server_websocket import ServerWebSocket
 
 
-def make_ws_server(endpoint='test', token=None, data=True, control=None):
+def make_ws_server(
+        endpoint='test', token=None, data=True, control=None,
+        max_connections=None):
     """Create ServerWebSocket with mock serial proxy"""
     config = {'protocol': 'websocket', 'endpoint': endpoint}
     if token:
@@ -17,6 +19,8 @@ def make_ws_server(endpoint='test', token=None, data=True, control=None):
         config['data'] = False
     if control:
         config['control'] = control
+    if max_connections is not None:
+        config['max_connections'] = max_connections
     serial = Mock()
     serial.connect.return_value = True
     serial.get_signals.return_value = 0
@@ -109,6 +113,56 @@ class TestConnections(unittest.TestCase):
         client.is_websocket = False  # simulate closed
         srv.process_stale()
         self.assertEqual(len(srv.connections), 0)
+
+
+class TestMaxConnections(unittest.TestCase):
+    def test_default_max_connections_is_0(self):
+        srv = make_ws_server()
+        self.assertEqual(srv._max_connections, 0)
+
+    def test_max_connections_limit_enforced(self):
+        srv = make_ws_server(max_connections=2)
+        c1 = make_ws_client(('127.0.0.1', 1))
+        c2 = make_ws_client(('127.0.0.1', 2))
+        c3 = make_ws_client(('127.0.0.1', 3))
+        srv.add_connection(c1)
+        srv.add_connection(c2)
+        srv.add_connection(c3)
+        self.assertEqual(len(srv.connections), 2)
+        c3.ws_close.assert_called_once_with(1013, 'Server limit reached')
+
+    def test_max_connections_zero_unlimited(self):
+        srv = make_ws_server(max_connections=0)
+        clients = [make_ws_client(('127.0.0.1', p)) for p in range(10)]
+        for c in clients:
+            srv.add_connection(c)
+        self.assertEqual(len(srv.connections), 10)
+
+    def test_max_connections_one(self):
+        srv = make_ws_server(max_connections=1)
+        c1 = make_ws_client(('127.0.0.1', 1))
+        c2 = make_ws_client(('127.0.0.1', 2))
+        srv.add_connection(c1)
+        srv.add_connection(c2)
+        self.assertEqual(len(srv.connections), 1)
+        c2.ws_close.assert_called_once()
+
+    def test_port_level_limit(self):
+        """Port-level max_connections limits total across servers"""
+        serial = Mock()
+        serial.connect = Mock(return_value=True)
+        serial.can_add_connection = Mock(side_effect=[True, True, False])
+        serial.get_signals = Mock(return_value=0)
+        config = {'protocol': 'websocket', 'endpoint': 'test', 'max_connections': 0}
+        srv = ServerWebSocket(config, serial)
+        c1 = make_ws_client(('127.0.0.1', 1))
+        c2 = make_ws_client(('127.0.0.1', 2))
+        c3 = make_ws_client(('127.0.0.1', 3))
+        srv.add_connection(c1)
+        srv.add_connection(c2)
+        srv.add_connection(c3)
+        self.assertEqual(len(srv.connections), 2)
+        c3.ws_close.assert_called_once_with(1013, 'Port limit reached')
 
 
 class TestDataForwarding(unittest.TestCase):

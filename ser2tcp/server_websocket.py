@@ -30,6 +30,7 @@ class ServerWebSocket():
         if not self._data_enabled and not self._control:
             raise _server.ConfigError(
                 'WebSocket "data": false requires "control" config')
+        self._max_connections = config.get('max_connections', 0)
         # Parse control config
         self._ctl_rts = False
         self._ctl_dtr = False
@@ -84,12 +85,29 @@ class ServerWebSocket():
         """Return IP filter or None"""
         return self._ip_filter
 
+    @property
+    def max_connections(self):
+        """Return max connections limit (0 = unlimited)"""
+        return self._max_connections
+
     def has_connections(self):
         """True if server has active connections"""
         return bool(self._connections)
 
     def add_connection(self, client):
         """Add accepted WebSocket connection"""
+        if self._max_connections > 0 and len(self._connections) >= self._max_connections:
+            addr = self._client_addr(client)
+            self._log.info(
+                "Client rejected (server limit): %s WEBSOCKET", addr)
+            client.ws_close(1013, 'Server limit reached')
+            return
+        if not self._serial.can_add_connection():
+            addr = self._client_addr(client)
+            self._log.info(
+                "Client rejected (port limit): %s WEBSOCKET", addr)
+            client.ws_close(1013, 'Port limit reached')
+            return
         if self._serial.connect():
             self._connections.append(client)
             addr = self._client_addr(client)

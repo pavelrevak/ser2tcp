@@ -154,8 +154,30 @@ Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `loc
 | `control` | Signal control configuration | - |
 | `send_timeout` | Disconnect client if data cannot be sent within this time (seconds) | 5.0 |
 | `buffer_limit` | Maximum send buffer size per client (bytes), `null` for unlimited | null |
+| `max_connections` | Maximum clients per server (0 = unlimited) | 0 |
 
 \* `address`/`port` required for tcp/telnet/ssl; `address` for socket; `endpoint` for websocket
+
+#### Port-level connection limit
+
+You can also limit total connections across all servers on a port:
+
+```json
+{
+    "ports": [{
+        "max_connections": 10,
+        "serial": {"port": "/dev/ttyUSB0"},
+        "servers": [
+            {"protocol": "tcp", "address": "0.0.0.0", "port": 10001, "max_connections": 5},
+            {"protocol": "websocket", "endpoint": "device"}
+        ]
+    }]
+}
+```
+
+- Port-level `max_connections`: limits total clients across all servers (default 0 = unlimited)
+- Server-level `max_connections`: limits clients on that specific server (default 0 = unlimited)
+- Both limits are checked — if either is reached, new connections are rejected
 
 #### WebSocket configuration
 

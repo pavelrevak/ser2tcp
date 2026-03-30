@@ -1152,3 +1152,110 @@ class TestIpFilterValidation(unittest.TestCase):
             }]
         })
         self.assertIsNone(result)
+
+
+class TestMaxConnectionsValidation(unittest.TestCase):
+    """Test max_connections validation"""
+
+    def test_max_connections_valid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+                'max_connections': 5,
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_max_connections_zero_unlimited(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+                'max_connections': 0,
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_max_connections_negative_invalid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+                'max_connections': -1,
+            }]
+        })
+        self.assertIn('max_connections', result)
+
+    def test_max_connections_string_invalid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+                'max_connections': '5',
+            }]
+        })
+        self.assertIn('max_connections', result)
+
+    def test_max_connections_websocket(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'servers': [{
+                'protocol': 'websocket',
+                'endpoint': 'test',
+                'max_connections': 1,
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_port_level_max_connections_valid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'max_connections': 10,
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_port_level_max_connections_zero(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'max_connections': 0,
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+            }]
+        })
+        self.assertIsNone(result)
+
+    def test_port_level_max_connections_invalid(self):
+        wrapper = make_wrapper()
+        result = wrapper._validate_port_config({
+            'serial': {'port': '/dev/ttyUSB0'},
+            'max_connections': -5,
+            'servers': [{
+                'protocol': 'tcp',
+                'address': '0.0.0.0',
+                'port': 10001,
+            }]
+        })
+        self.assertIn('max_connections', result)

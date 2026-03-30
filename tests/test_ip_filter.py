@@ -90,7 +90,8 @@ class TestIpFilter(unittest.TestCase):
 
     def test_invalid_network_in_config(self):
         """Invalid network in config should be skipped with warning"""
-        flt = IpFilter(allow=['192.168.1.0/24', 'invalid', '10.0.0.0/8'])
+        with self.assertLogs('ser2tcp.ip_filter', level='WARNING'):
+            flt = IpFilter(allow=['192.168.1.0/24', 'invalid', '10.0.0.0/8'])
         self.assertTrue(flt.is_allowed('192.168.1.1'))
         self.assertTrue(flt.is_allowed('10.0.0.1'))
         # Only 2 valid networks should be parsed
