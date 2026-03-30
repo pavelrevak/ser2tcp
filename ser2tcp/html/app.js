@@ -69,11 +69,13 @@ function api(method, path, body) {
 function showLogin() {
   $('login-view').classList.remove('hidden');
   $('app').classList.add('hidden');
+  document.querySelector('.topbar').classList.add('hidden');
 }
 
 function showApp(initialData) {
   $('login-view').classList.add('hidden');
   $('app').classList.remove('hidden');
+  document.querySelector('.topbar').classList.remove('hidden');
   updateUserInfo();
   const hash = location.hash.slice(1);
   const tab = ['ports', 'users'].includes(hash) ? hash : 'ports';
@@ -250,9 +252,15 @@ function renderPortCard(port, index) {
   }
   // Show configured port or match
   if (ser.match) {
-    const matchStr = Object.entries(ser.match)
-      .map(([k,v]) => k + '=' + v).join(', ');
-    div.appendChild(el('p', 'match: ' + matchStr, 'port-config-detail'));
+    const matchDiv = el('div', null, 'port-match-detail');
+    matchDiv.appendChild(el('span', 'match:', 'port-match-label'));
+    Object.entries(ser.match).forEach(([k, v]) => {
+      const row = el('div', null, 'port-match-row');
+      row.appendChild(el('span', k, 'port-match-key'));
+      row.appendChild(el('span', v, 'port-match-val'));
+      matchDiv.appendChild(row);
+    });
+    div.appendChild(matchDiv);
   } else if (ser.port && port.name) {
     div.appendChild(el('p', 'port: ' + ser.port, 'port-config-detail'));
   }
@@ -281,28 +289,32 @@ function renderPortCard(port, index) {
         termLink.className = 'detect-link';
         termLink.textContent = 'Terminal';
         termLink.target = '_blank';
-        li.appendChild(el('span', ' '));
-        li.appendChild(termLink);
+        const linksDiv = el('div', null, 'ws-links');
+        linksDiv.appendChild(termLink);
         const rawLink = document.createElement('a');
         rawLink.href = '/raw/' + s.endpoint;
         rawLink.className = 'detect-link';
         rawLink.textContent = 'Raw';
         rawLink.target = '_blank';
-        li.appendChild(el('span', ' '));
-        li.appendChild(rawLink);
+        linksDiv.appendChild(rawLink);
+        li.appendChild(linksDiv);
       }
       if (s.data === false)
         li.appendChild(el('div', 'control only', 'control-signals'));
     }
     if (s.control) {
-      const parts = [];
-      if (s.control.rts) parts.push('RTS');
-      if (s.control.dtr) parts.push('DTR');
+      const ctlDiv = el('div', null, 'control-signals');
+      const setParts = [];
+      if (s.control.rts) setParts.push('RTS');
+      if (s.control.dtr) setParts.push('DTR');
+      if (setParts.length)
+        ctlDiv.appendChild(el('div', 'ctrl: ' + setParts.join(', ')));
+      else
+        ctlDiv.appendChild(el('div', 'ctrl: escape only'));
       if (s.control.signals && s.control.signals.length)
-        parts.push('report: ' + s.control.signals.map(
-          s => s.toUpperCase()).join(', '));
-      const label = parts.length ? parts.join(' | ') : 'escape only';
-      li.appendChild(el('div', 'ctrl: ' + label, 'control-signals'));
+        ctlDiv.appendChild(el('div', 'report: '
+          + s.control.signals.map(s => s.toUpperCase()).join(', ')));
+      li.appendChild(ctlDiv);
     }
     const clients = s.connections || [];
     if (clients.length) {
@@ -322,8 +334,6 @@ function renderPortCard(port, index) {
         cul.appendChild(cli);
       });
       li.appendChild(cul);
-    } else {
-      li.appendChild(el('em', ' no connections', 'empty'));
     }
     ul.appendChild(li);
   });
@@ -440,9 +450,9 @@ function buildConfigFromStatus(port) {
   if (ser.stopbits) config.serial.stopbits = ser.stopbits;
   config.servers = (port.servers || []).map(s => {
     const srv = {protocol: s.protocol.toLowerCase()};
+    if (s.data === false) srv.data = false;
     if (s.protocol === 'WEBSOCKET') {
       if (s.endpoint) srv.endpoint = s.endpoint;
-      if (s.data === false) srv.data = false;
       if (s.token) srv.token = s.token;
     } else {
       srv.address = s.address;
@@ -587,8 +597,8 @@ function showPortEditor(index, config) {
   paramsDiv.appendChild(baudSel);
   container.appendChild(paramsDiv);
 
-  const paramsDiv2 = el('div', null, 'field-row');
-  paramsDiv2.appendChild(el('label', 'Data bits:'));
+  const byteRow = el('div', null, 'field-row');
+  byteRow.appendChild(el('label', 'Data bits:'));
   const byteSel = document.createElement('select');
   byteSel.id = 'edit-bytesize';
   Object.entries(BYTESIZES).forEach(([bits, name]) => {
@@ -599,9 +609,11 @@ function showPortEditor(index, config) {
       opt.selected = true;
     byteSel.appendChild(opt);
   });
-  paramsDiv2.appendChild(byteSel);
+  byteRow.appendChild(byteSel);
+  container.appendChild(byteRow);
 
-  paramsDiv2.appendChild(el('label', 'Parity:'));
+  const parityRow = el('div', null, 'field-row');
+  parityRow.appendChild(el('label', 'Parity:'));
   const paritySel = document.createElement('select');
   paritySel.id = 'edit-parity';
   PARITIES.forEach(p => {
@@ -611,9 +623,11 @@ function showPortEditor(index, config) {
     if (config.serial.parity === p) opt.selected = true;
     paritySel.appendChild(opt);
   });
-  paramsDiv2.appendChild(paritySel);
+  parityRow.appendChild(paritySel);
+  container.appendChild(parityRow);
 
-  paramsDiv2.appendChild(el('label', 'Stop bits:'));
+  const stopRow = el('div', null, 'field-row');
+  stopRow.appendChild(el('label', 'Stop bits:'));
   const stopSel = document.createElement('select');
   stopSel.id = 'edit-stopbits';
   Object.entries(STOPBITS).forEach(([bits, name]) => {
@@ -624,8 +638,8 @@ function showPortEditor(index, config) {
       opt.selected = true;
     stopSel.appendChild(opt);
   });
-  paramsDiv2.appendChild(stopSel);
-  container.appendChild(paramsDiv2);
+  stopRow.appendChild(stopSel);
+  container.appendChild(stopRow);
 
   // --- Servers section ---
   container.appendChild(el('h3', 'Servers'));
@@ -757,17 +771,6 @@ function renderServerBox(srv, index, total) {
   wsToken.value = srv.token || '';
   wsRow2.appendChild(wsToken);
   wsDiv.appendChild(wsRow2);
-  const wsRow3 = el('div', null, 'field-row');
-  const wsDataLbl = document.createElement('label');
-  wsDataLbl.className = 'ctl-signal-label';
-  const wsDataCb = document.createElement('input');
-  wsDataCb.type = 'checkbox';
-  wsDataCb.className = 'srv-data';
-  wsDataCb.checked = srv.data !== false;
-  wsDataLbl.appendChild(wsDataCb);
-  wsDataLbl.appendChild(document.createTextNode(' Forward serial data'));
-  wsRow3.appendChild(wsDataLbl);
-  wsDiv.appendChild(wsRow3);
   box.appendChild(wsDiv);
 
   // Address + Port (or Path for SOCKET)
@@ -779,15 +782,17 @@ function renderServerBox(srv, index, total) {
   addrInput.className = 'srv-address';
   addrInput.value = srv.address || '0.0.0.0';
   addrRow.appendChild(addrInput);
+  box.appendChild(addrRow);
+  const portRow = el('div', null, 'field-row');
   const portLabel = el('label', 'Port:');
   portLabel.className = 'srv-port-label';
-  addrRow.appendChild(portLabel);
+  portRow.appendChild(portLabel);
   const portInput = document.createElement('input');
   portInput.type = 'number';
   portInput.className = 'srv-port';
   portInput.value = srv.port || '';
-  addrRow.appendChild(portInput);
-  box.appendChild(addrRow);
+  portRow.appendChild(portInput);
+  box.appendChild(portRow);
 
   // SSL fields
   const sslDiv = el('div');
@@ -827,11 +832,20 @@ function renderServerBox(srv, index, total) {
   // Control details (shown when enabled)
   const ctlDetails = el('div');
   ctlDetails.className = 'ctl-details';
-  // Protocol description
-  const ctlDesc = el('p',
-    'Binary escape protocol using 0xFF prefix. '
-    + 'All 0xFF bytes in data are escaped (FF FF). ',
-    'ctl-desc');
+  // Forward data checkbox
+  const ctlDataRow = el('div', null, 'field-row');
+  const ctlDataLbl = document.createElement('label');
+  ctlDataLbl.className = 'ctl-signal-label';
+  const ctlDataCb = document.createElement('input');
+  ctlDataCb.type = 'checkbox';
+  ctlDataCb.className = 'srv-data';
+  ctlDataCb.checked = srv.data !== false;
+  ctlDataLbl.appendChild(ctlDataCb);
+  ctlDataLbl.appendChild(document.createTextNode(' Forward serial data'));
+  ctlDataRow.appendChild(ctlDataLbl);
+  ctlDetails.appendChild(ctlDataRow);
+  // Protocol description (changes based on protocol)
+  const ctlDesc = el('p', '', 'ctl-desc');
   const ctlMoreBtn = el('a', 'Protocol reference');
   ctlMoreBtn.href = '#';
   ctlMoreBtn.className = 'detect-link';
@@ -840,7 +854,6 @@ function renderServerBox(srv, index, total) {
     const dlg = $('ctl-protocol-dlg');
     dlg.classList.toggle('hidden');
   };
-  ctlDesc.appendChild(ctlMoreBtn);
   ctlDetails.appendChild(ctlDesc);
   // RTS/DTR write enable
   const ctlWriteRow = el('div', null, 'field-row');
@@ -908,11 +921,20 @@ function renderServerBox(srv, index, total) {
     const isWs = proto === 'WEBSOCKET';
     wsDiv.classList.toggle('hidden', !isWs);
     addrRow.classList.toggle('hidden', isWs);
+    portRow.classList.toggle('hidden', isWs || isSocket);
     addrLabel.textContent = isSocket ? 'Path:' : 'Address:';
-    portLabel.classList.toggle('hidden', isSocket);
-    portInput.classList.toggle('hidden', isSocket);
     sslDiv.classList.toggle('hidden', !isSsl);
     ctlDiv.classList.toggle('hidden', isTelnet);
+    // Update control description
+    ctlDesc.textContent = '';
+    if (isWs) {
+      ctlDesc.appendChild(document.createTextNode(
+        'JSON text frames for signal control. '));
+    } else {
+      ctlDesc.appendChild(document.createTextNode(
+        'Binary escape protocol using 0xFF prefix. '));
+      ctlDesc.appendChild(ctlMoreBtn);
+    }
     if (isSocket) {
       addrInput.value = addrInput.value === '0.0.0.0' ? '' : addrInput.value;
     }
@@ -1043,7 +1065,6 @@ function collectConfig() {
       if (endpoint) srv.endpoint = endpoint;
       const wsToken = box.querySelector('.srv-token').value.trim();
       if (wsToken) srv.token = wsToken;
-      if (!box.querySelector('.srv-data').checked) srv.data = false;
     } else {
       srv.address = box.querySelector('.srv-address').value.trim();
       if (proto !== 'socket') {
@@ -1062,6 +1083,7 @@ function collectConfig() {
       if (Object.keys(ssl).length) srv.ssl = ssl;
     }
     if (proto !== 'telnet' && box.querySelector('.ctl-enable').checked) {
+      if (!box.querySelector('.srv-data').checked) srv.data = false;
       const ctl = {};
       box.querySelectorAll('.ctl-write:checked').forEach(
         cb => { ctl[cb.dataset.signal] = true; });

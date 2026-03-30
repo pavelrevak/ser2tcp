@@ -23,16 +23,19 @@ SIGNAL_NAMES = ('rts', 'dtr', 'cts', 'dsr', 'ri', 'cd')
 SIGNAL_BITS = {name: i for i, name in enumerate(SIGNAL_NAMES)}
 
 
-def wrap_control(connection_class, control_config):
+def wrap_control(connection_class, control_config, data_enabled=True):
     """Wrap a connection class with control protocol handling.
 
     Returns a new class that escapes 0xFF in outgoing data and parses
     escape sequences in incoming data for signal control commands.
+    When data_enabled=False, only control commands are processed,
+    0xFF escaping is skipped and data bytes are ignored.
     """
     signals = control_config.get('signals', [])
     signal_set = set(s.lower() for s in signals)
     rts_enabled = bool(control_config.get('rts'))
     dtr_enabled = bool(control_config.get('dtr'))
+    forward_data = data_enabled
 
     class ControlConnection(connection_class):
 
@@ -42,9 +45,12 @@ def wrap_control(connection_class, control_config):
             self._ctl_signals = signal_set
             self._ctl_rts = rts_enabled
             self._ctl_dtr = dtr_enabled
+            self._ctl_data = forward_data
 
         def send(self, data):
-            """Send data with 0xFF escaped"""
+            """Send data with 0xFF escaped (skipped when data disabled)"""
+            if not self._ctl_data:
+                return 0
             return super().send(data.replace(b'\xff', b'\xff\xff'))
 
         def send_signal_report(self, bitmask):
@@ -70,12 +76,13 @@ def wrap_control(connection_class, control_config):
                     continue
                 if ESCAPE in data:
                     index = data.index(ESCAPE)
-                    if index > 0:
+                    if self._ctl_data and index > 0:
                         clean.extend(data[:index])
                     del data[:index + 1]
                     self._ctl_escape = True
                 else:
-                    clean.extend(data)
+                    if self._ctl_data:
+                        clean.extend(data)
                     break
             if clean:
                 self._serial.send(bytes(clean))

@@ -1,6 +1,6 @@
 # Ser2tcp
 
-Simple proxy for connecting over TCP, TELNET, SSL or Unix socket to serial port
+Simple proxy for connecting over TCP, TELNET, SSL, WebSocket or Unix socket to serial port
 
 https://github.com/cortexm/ser2tcp
 
@@ -8,18 +8,22 @@ https://github.com/cortexm/ser2tcp
 
 - can serve multiple serial ports using pyserial library
 - each serial port can have multiple servers
-- server can use TCP, TELNET, SSL or SOCKET protocol
+- server can use TCP, TELNET, SSL, WebSocket or SOCKET protocol
   - TCP protocol just bridge whole RAW serial stream to TCP
   - TELNET protocol will send every character immediately and not wait for ENTER, it is useful to use standard `telnet` as serial terminal
   - SSL protocol provides encrypted TCP connection with optional mutual TLS (mTLS) client certificate verification
+  - WebSocket protocol connects through the HTTP server with binary frames for data and JSON text frames for signal control
   - SOCKET protocol uses Unix domain socket for local IPC
 - servers accepts multiple connections at one time
   - each connected client can sent to serial port
   - serial port send received data to all connected clients
 - non-blocking send with configurable timeout and buffer limit
+- serial signal control (RTS, DTR, CTS, DSR, RI, CD) via escape protocol or WebSocket JSON
 - built-in HTTP server with REST API for status monitoring
 - web interface for viewing configured ports and connections
+- web terminal clients (xterm.js VT100 terminal and raw colored view)
 - authentication with session management and API tokens
+- light/dark mode web UI (follows system preference)
 
 ## Installation
 
@@ -137,12 +141,41 @@ Match attributes: `vid`, `pid`, `serial_number`, `manufacturer`, `product`, `loc
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `address` | Bind address (IP for tcp/telnet/ssl, path for socket) | required |
-| `port` | TCP port (not used for socket) | required |
-| `protocol` | `tcp`, `telnet`, `ssl` or `socket` | required |
+| `address` | Bind address (IP for tcp/telnet/ssl, path for socket) | required* |
+| `port` | TCP port (not used for socket/websocket) | required* |
+| `protocol` | `tcp`, `telnet`, `ssl`, `websocket` or `socket` | required |
+| `endpoint` | WebSocket URL path (websocket only), must be unique | required* |
+| `token` | Per-server auth token (websocket only) | - |
 | `ssl` | SSL configuration (required for `ssl` protocol) | - |
+| `data` | Forward serial data (default true), `false` = control-only | true |
+| `control` | Signal control configuration | - |
 | `send_timeout` | Disconnect client if data cannot be sent within this time (seconds) | 5.0 |
 | `buffer_limit` | Maximum send buffer size per client (bytes), `null` for unlimited | null |
+
+\* `address`/`port` required for tcp/telnet/ssl; `address` for socket; `endpoint` for websocket
+
+#### WebSocket configuration
+
+WebSocket connections go through the HTTP server — no separate listening port needed:
+
+```json
+{
+    "protocol": "websocket",
+    "endpoint": "my-device",
+    "control": {
+        "rts": true,
+        "signals": ["rts", "dtr", "cts", "dsr"]
+    }
+}
+```
+
+- Accessible at `ws://host:port/ws/my-device` (or `wss://` for HTTPS)
+- Available on all configured HTTP servers
+- Binary frames carry raw serial data (bidirectional)
+- Text frames carry JSON control messages: `{"rts": true}`, `{"signals": {...}}`
+- Signal state sent automatically on connect, then only on change
+- Auth: per-server `token`, global user session, or both accepted
+- Web terminals available at `/xterm/<endpoint>` (VT100) and `/raw/<endpoint>` (colored hex)
 
 #### Socket configuration
 
@@ -289,7 +322,19 @@ HTTPS with SSL:
 | POST | `/api/login` | no | Authenticate, returns session token |
 | POST | `/api/logout` | no | Invalidate session |
 | GET | `/api/status` | yes | Runtime status (serial ports, servers, connections) |
-| GET | `/api/ports` | yes | Available serial ports with USB/device attributes |
+| GET | `/api/detect` | yes | Available serial ports with USB/device attributes |
+| POST | `/api/ports` | admin | Add new port configuration |
+| PUT | `/api/ports/<index>` | admin | Update port configuration |
+| DELETE | `/api/ports/<index>` | admin | Delete port configuration |
+| DELETE | `/api/ports/<p>/connections/<s>/<c>` | admin | Disconnect client |
+| PUT | `/api/ports/<index>/signals` | admin | Set RTS/DTR signals |
+| GET | `/api/signals` | yes | Signal states for all ports |
+| GET | `/api/users` | yes | List users |
+| POST | `/api/users` | admin | Add user |
+| PUT | `/api/users/<login>` | admin | Update user |
+| DELETE | `/api/users/<login>` | admin | Delete user |
+| GET | `/xterm/<endpoint>` | no | WebSocket VT100 terminal |
+| GET | `/raw/<endpoint>` | no | WebSocket raw terminal |
 
 Authentication: `Authorization: Bearer <token>` header or `?token=<token>` query parameter. Without `auth` configuration, all endpoints are accessible without authentication.
 
@@ -374,7 +419,7 @@ For system service, use `sudo systemctl` instead of `systemctl --user`.
 
 - Python 3.8+
 - pyserial 3.0+
-- uhttp-server 2.3.0+ (for HTTP/API)
+- uhttp-server 2.3.2+ (for HTTP/API and WebSocket)
 
 ### Running on
 

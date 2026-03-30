@@ -297,7 +297,6 @@ class HttpServerWrapper():
                     srv_info = {
                         'protocol': server.protocol,
                         'endpoint': server.endpoint,
-                        'data': server.data_enabled,
                         'connections': [],
                     }
                     for con in server.connections:
@@ -325,6 +324,8 @@ class HttpServerWrapper():
                         srv_info['port'] = server.config['port']
                     if 'ssl' in server.config:
                         srv_info['ssl'] = server.config['ssl']
+                if not server.data_enabled:
+                    srv_info['data'] = False
                 if server.control:
                     srv_info['control'] = server.control
                 servers.append(srv_info)
@@ -448,11 +449,11 @@ class HttpServerWrapper():
             proto = srv['protocol'].upper()
             if proto not in ('TCP', 'TELNET', 'SSL', 'SOCKET', 'WEBSOCKET'):
                 return f'Unknown protocol: {srv["protocol"]}'
+            if not srv.get('data', True) and 'control' not in srv:
+                return '"data": false requires "control" config'
             if proto == 'WEBSOCKET':
                 if 'endpoint' not in srv:
                     return 'WebSocket endpoint required'
-                if not srv.get('data', True) and 'control' not in srv:
-                    return '"data": false requires "control" config'
             elif proto == 'SOCKET':
                 if 'address' not in srv:
                     return 'Socket path (address) required'

@@ -37,10 +37,14 @@ class Server():
         self._send_timeout = self._config.get('send_timeout')
         self._buffer_limit = self._config.get('buffer_limit')
         self._control = self._config.get('control')
+        self._data_enabled = self._config.get('data', True)
         self._ssl_context = None
         self._socket = None
         if self._protocol not in self.CONNECTIONS:
             raise ConfigError('Unknown protocol %s' % self._protocol)
+        if not self._data_enabled and not self._control:
+            raise ConfigError(
+                '"data": false requires "control" configuration')
         if self._control and self._protocol == 'TELNET':
             raise ConfigError(
                 'Control protocol not supported with TELNET')
@@ -104,6 +108,11 @@ class Server():
         return self._control
 
     @property
+    def data_enabled(self):
+        """Return True if data forwarding is enabled"""
+        return self._data_enabled
+
+    @property
     def connections(self):
         """Return list of connections"""
         return self._connections
@@ -125,7 +134,7 @@ class Server():
         connection_class = self.CONNECTIONS[self._protocol]
         if self._control:
             connection_class = _connection_control.wrap_control(
-                connection_class, self._control)
+                connection_class, self._control, self._data_enabled)
         try:
             connection = connection_class(**kwargs)
         except _connection_ssl.SslHandshakeError as err:
@@ -218,6 +227,8 @@ class Server():
 
     def send(self, data):
         """Send data to all connections"""
+        if not self._data_enabled:
+            return
         for con in self._connections:
             con.send(data)
 

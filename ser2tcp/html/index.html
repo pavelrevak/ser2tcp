@@ -2,13 +2,29 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ser2tcp</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="topbar-title">ser2tcp</span>
+    <nav>
+      <button class="active" data-tab="ports">Ports</button>
+      <button data-tab="users">Users</button>
+    </nav>
+  </div>
+  <div class="topbar-right">
+    <div class="user-info hidden" id="user-info">
+      <span id="user-name"></span>
+      <button id="logout-btn">Logout</button>
+    </div>
+  </div>
+</div>
+
 <div id="login-view" class="login-box hidden">
-  <h1>ser2tcp</h1>
   <div class="section">
     <h2>Login</h2>
     <div id="login-error" class="error hidden"></div>
@@ -19,34 +35,24 @@
 </div>
 
 <div id="app" class="hidden">
-  <header>
-    <h1>ser2tcp</h1>
-    <div class="user-info hidden" id="user-info">
-      <span id="user-name"></span>
-      <button id="logout-btn">Logout</button>
+  <div class="content">
+    <div id="tab-ports">
+      <div id="ports-content"></div>
+      <div id="ports-actions" class="toolbar">
+        <button class="btn-primary" id="add-port-btn">+ Add Port</button>
+      </div>
+      <div id="detected-ports"></div>
     </div>
-  </header>
-  <nav>
-    <button class="active" data-tab="ports">Ports</button>
-    <button data-tab="users">Users</button>
-  </nav>
-
-  <div id="tab-ports">
-    <div id="ports-content"></div>
-    <div id="ports-actions" class="toolbar">
-      <button class="btn-primary" id="add-port-btn">+ Add Port</button>
-    </div>
-    <div id="detected-ports"></div>
-  </div>
-  <div id="tab-users" class="hidden">
-    <div id="users-content"></div>
-    <div class="toolbar">
-      <h3>Add user</h3>
-      <input id="new-login" type="text" placeholder="Login" autocomplete="off">
-      <input id="new-pass" type="password" placeholder="Password" autocomplete="new-password">
-      <label><input id="new-admin" type="checkbox" checked disabled> Admin</label>
-      <button class="btn-primary" id="add-user-btn">Add</button>
-      <div id="user-error" class="error hidden"></div>
+    <div id="tab-users" class="hidden">
+      <div id="users-content"></div>
+      <div class="toolbar">
+        <h3>Add user</h3>
+        <input id="new-login" type="text" placeholder="Login" autocomplete="off">
+        <input id="new-pass" type="password" placeholder="Password" autocomplete="new-password">
+        <label><input id="new-admin" type="checkbox" checked disabled> Admin</label>
+        <button class="btn-primary" id="add-user-btn">Add</button>
+        <div id="user-error" class="error hidden"></div>
+      </div>
     </div>
   </div>
 </div>
