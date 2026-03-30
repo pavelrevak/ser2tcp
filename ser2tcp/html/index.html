@@ -14,6 +14,7 @@
     <nav>
       <button class="active" data-tab="ports">Ports</button>
       <button data-tab="users">Users</button>
+      <button data-tab="settings">Settings</button>
     </nav>
   </div>
   <div class="topbar-right">
@@ -70,6 +71,12 @@
         <label><input id="new-admin" type="checkbox" checked disabled> Admin</label>
         <button class="btn-primary" id="add-user-btn">Add</button>
         <div id="user-error" class="error hidden"></div>
+      </div>
+    </div>
+    <div id="tab-settings" class="hidden">
+      <div id="http-servers"></div>
+      <div class="toolbar">
+        <button class="btn-primary" id="add-http-btn">+ Add HTTP Server</button>
       </div>
     </div>
   </div>

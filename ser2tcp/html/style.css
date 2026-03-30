@@ -115,7 +115,7 @@ h1 { color: var(--text); margin: 0; font-size: 1.4em; font-weight: 600; }
   font-weight: 600; color: var(--text); }
 .topbar nav button:hover { color: var(--accent); }
 .content { padding: 1em 1.5em; }
-#ports-content { display: grid;
+#ports-content, #http-servers { display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 0.8em; }
 .section { background: var(--bg-card); padding: 0.8em 1em; margin: 0;
@@ -193,12 +193,13 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .empty { color: var(--text-muted); font-style: italic; }
 
 /* Port editor */
-.port-edit { background: var(--bg-card); padding: 1em 1.2em; margin: 0;
+.port-edit, .http-edit { background: var(--bg-card); padding: 1em 1.2em; margin: 0;
   border-radius: 8px; box-shadow: 0 1px 4px var(--shadow);
   border: 2px solid var(--edit-border); grid-column: 1 / -1; }
-.port-edit h3 { margin: 0.8em 0 0.3em; color: var(--text-secondary);
+.port-edit h3, .http-edit h3 { margin: 0.8em 0 0.3em; color: var(--text-secondary);
   font-size: 0.95em; font-weight: 600; }
-.port-edit h3:first-child { margin-top: 0; }
+.port-edit h3:first-child, .http-edit h3:first-child { margin-top: 0; }
+.edit-buttons { display: flex; gap: 0.5em; margin-top: 1em; }
 .field-row { display: flex; align-items: center; gap: 0.5em;
   margin: 0.4em 0; flex-wrap: wrap; }
 .field-row label { min-width: 7em; color: var(--text-secondary);
@@ -257,6 +258,10 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .srv-ip-filter { margin-top: 0.5em; padding-top: 0.5em;
   border-top: 1px dashed var(--border); }
 .ctl-poll-interval { max-width: 8em; }
+.setting-row { display: flex; align-items: center; gap: 0.8em; margin: 0.6em 0; }
+.setting-row label { min-width: 10em; }
+.setting-row input[type="text"], .setting-row input[type="number"] { flex: 1; }
+.ssl-fields { margin-left: 1em; border-left: 2px solid var(--border); padding-left: 1em; }
 .signal-indicators { display: flex; gap: 0.3em; margin: 0.4em 0; }
 .signal-badge { display: inline-block; padding: 0.2em 0.5em; border-radius: 3px;
   font-size: 1em; font-weight: bold; font-family: monospace; }
@@ -282,3 +287,6 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .dialog p { font-size: 0.85em; color: var(--text-secondary); }
 .dialog-close { position: absolute; top: 0.5em; right: 0.5em;
   font-size: 1.3em; }
+.dialog-buttons { display: flex; gap: 0.5em; margin-top: 1em; }
+.dialog .setting-row { margin: 0.5em 0; }
+.dialog .setting-row label { min-width: 6em; }

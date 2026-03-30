@@ -51,7 +51,7 @@ def create_default_config(config_path, log):
 
     config = {
         "ports": [],
-        "http": [{"address": "127.0.0.1", "port": port}]
+        "http": [{"name": "main", "address": "127.0.0.1", "port": port}]
     }
 
     config_dir = _os.path.dirname(config_path)

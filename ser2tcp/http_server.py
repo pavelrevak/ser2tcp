@@ -2,6 +2,7 @@
 
 import json as _json
 import logging as _logging
+import os as _os
 import pathlib as _pathlib
 import ssl as _ssl
 
@@ -49,15 +50,32 @@ class HttpServerWrapper():
         self._auth = _http_auth.SessionManager(auth_config) if auth_config else None
         self._ws_clients = {}  # uhttp client -> ServerWebSocket
         self._servers = []  # list of (HttpServer, IpFilter or None)
+        self._pending_reload = False
         for config in configs:
             address = config.get('address', '0.0.0.0')
             port = config.get('port', 8080)
             ssl_context = None
             if 'ssl' in config:
                 ssl_config = config['ssl']
+                certfile = ssl_config.get('certfile')
+                keyfile = ssl_config.get('keyfile')
+                if not certfile or not keyfile:
+                    self._log.error(
+                        "HTTPS server %s:%d: missing certfile or keyfile, skipping",
+                        address, port)
+                    continue
+                if not _os.path.exists(certfile):
+                    self._log.error(
+                        "HTTPS server %s:%d: certfile not found: %s, skipping",
+                        address, port, certfile)
+                    continue
+                if not _os.path.exists(keyfile):
+                    self._log.error(
+                        "HTTPS server %s:%d: keyfile not found: %s, skipping",
+                        address, port, keyfile)
+                    continue
                 ssl_context = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
-                ssl_context.load_cert_chain(
-                    ssl_config['certfile'], ssl_config['keyfile'])
+                ssl_context.load_cert_chain(certfile, keyfile)
                 self._log.info(
                     "HTTPS server: %s:%d", address, port)
             else:
@@ -67,6 +85,67 @@ class HttpServerWrapper():
             self._servers.append((_uhttp_server.HttpServer(
                 address=address, port=port, ssl_context=ssl_context,
                 event_mode=True), ip_flt))
+
+    def _create_http_server(self, config):
+        """Create a single HTTP server from config, return (server, ip_flt) or None"""
+        address = config.get('address', '0.0.0.0')
+        port = config.get('port', 8080)
+        ssl_context = None
+        if 'ssl' in config:
+            ssl_config = config['ssl']
+            certfile = ssl_config.get('certfile')
+            keyfile = ssl_config.get('keyfile')
+            if not certfile or not keyfile:
+                raise ValueError(f"HTTPS {address}:{port}: missing certfile or keyfile")
+            if not _os.path.exists(certfile):
+                raise ValueError(f"HTTPS {address}:{port}: certfile not found: {certfile}")
+            if not _os.path.exists(keyfile):
+                raise ValueError(f"HTTPS {address}:{port}: keyfile not found: {keyfile}")
+            ssl_context = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.load_cert_chain(certfile, keyfile)
+            self._log.info("HTTPS server: %s:%d", address, port)
+        else:
+            self._log.info("HTTP server: %s:%d", address, port)
+        ip_flt = _ip_filter.create_filter(config, log=self._log)
+        server = _uhttp_server.HttpServer(
+            address=address, port=port, ssl_context=ssl_context,
+            event_mode=True)
+        return (server, ip_flt)
+
+    def add_http_server(self, config):
+        """Add a new HTTP server dynamically"""
+        srv_tuple = self._create_http_server(config)
+        self._servers.append(srv_tuple)
+        return len(self._servers) - 1
+
+    def remove_http_server(self, index):
+        """Remove HTTP server by index"""
+        if index < 0 or index >= len(self._servers):
+            raise ValueError("Invalid server index")
+        server, _ = self._servers[index]
+        server.close()
+        del self._servers[index]
+
+    def reload_http_servers(self):
+        """Reload all HTTP servers from current configuration"""
+        # Close all existing servers
+        for server, _ in self._servers:
+            server.close()
+        self._servers.clear()
+        # Create new servers from config
+        configs = self._configuration.get('http', [])
+        if isinstance(configs, dict):
+            configs = [configs]
+        for config in configs:
+            try:
+                srv_tuple = self._create_http_server(config)
+                self._servers.append(srv_tuple)
+            except ValueError as e:
+                self._log.error("Failed to create HTTP server: %s", e)
+
+    def schedule_reload(self):
+        """Schedule HTTP servers reload for next process_stale cycle"""
+        self._pending_reload = True
 
     def read_sockets(self):
         """Return sockets for reading"""
@@ -130,9 +209,12 @@ class HttpServerWrapper():
 
 
     def process_stale(self):
-        """Cleanup expired sessions"""
+        """Cleanup expired sessions and handle pending reload"""
         if self._auth:
             self._auth.cleanup()
+        if self._pending_reload:
+            self._pending_reload = False
+            self.reload_http_servers()
 
     def close(self):
         """Close all HTTP servers"""
@@ -277,6 +359,30 @@ class HttpServerWrapper():
                 self._handle_api_users_update(client, user, login)
             elif client.method == 'DELETE':
                 self._handle_api_users_delete(client, user, login)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path == '/api/settings':
+            if client.method == 'GET':
+                self._handle_api_settings_get(client)
+            elif client.method == 'PUT':
+                self._handle_api_settings_update(client, user)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path == '/api/settings/http':
+            if client.method == 'POST':
+                self._handle_api_http_add(client, user)
+            else:
+                self._error(client, 'Method not allowed', 405)
+        elif client.path.startswith('/api/settings/http/'):
+            try:
+                index = int(client.path[len('/api/settings/http/'):])
+            except ValueError:
+                self._error(client, 'Invalid index', 400)
+                return
+            if client.method == 'PUT':
+                self._handle_api_http_update(client, user, index)
+            elif client.method == 'DELETE':
+                self._handle_api_http_delete(client, user, index)
             else:
                 self._error(client, 'Method not allowed', 405)
         else:
@@ -810,4 +916,135 @@ class HttpServerWrapper():
             return
         self._save_auth_config()
         self._log.info("User deleted: %s", login)
+        client.respond({'ok': True})
+
+    def _handle_api_settings_get(self, client):
+        """Return settings (http servers, session_timeout)"""
+        settings = {
+            'http': self._configuration.get('http', []),
+            'session_timeout': self._configuration.get('session_timeout'),
+        }
+        client.respond(settings)
+
+    def _handle_api_settings_update(self, client, user):
+        """Update settings"""
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        if not isinstance(data, dict):
+            self._error(client, f'Expected JSON object, got {type(data).__name__}', 400)
+            return
+        if 'session_timeout' in data:
+            val = data['session_timeout']
+            if val is not None and (not isinstance(val, int) or val < 0):
+                self._error(client, 'session_timeout must be positive integer or null', 400)
+                return
+            if val is None:
+                self._configuration.pop('session_timeout', None)
+            else:
+                self._configuration['session_timeout'] = val
+        self._save_config()
+        self._log.info("Settings updated")
+        client.respond({'ok': True})
+
+    def _validate_http_config(self, data):
+        """Validate HTTP server config, return error string or None"""
+        if not isinstance(data, dict):
+            return f'Expected JSON object, got {type(data).__name__}'
+        if 'port' not in data:
+            return 'port is required'
+        if not isinstance(data['port'], int) or data['port'] < 1 or data['port'] > 65535:
+            return 'port must be 1-65535'
+        if 'ssl' in data:
+            ssl = data['ssl']
+            if not isinstance(ssl, dict):
+                return 'ssl must be an object'
+            if not ssl.get('certfile') or not ssl.get('keyfile'):
+                return 'ssl requires certfile and keyfile paths'
+        return None
+
+    def _handle_api_http_add(self, client, user):
+        """Add new HTTP server"""
+        if not self._require_admin(client, user):
+            return
+        data = client.data
+        error = self._validate_http_config(data)
+        if error:
+            self._error(client, error, 400)
+            return
+        http_list = self._configuration.setdefault('http', [])
+        srv = {'address': data.get('address', '0.0.0.0'), 'port': data['port']}
+        if data.get('name'):
+            srv['name'] = data['name']
+        if 'ssl' in data:
+            srv['ssl'] = data['ssl']
+        # Try to create server before saving config
+        try:
+            srv_tuple = self._create_http_server(srv)
+        except ValueError as e:
+            self._error(client, str(e), 400)
+            return
+        http_list.append(srv)
+        self._servers.append(srv_tuple)
+        self._save_config()
+        self._log.info("HTTP server added")
+        client.respond({'ok': True})
+
+    def _handle_api_http_update(self, client, user, index):
+        """Update HTTP server"""
+        if not self._require_admin(client, user):
+            return
+        http_list = self._configuration.get('http', [])
+        if index < 0 or index >= len(http_list):
+            self._error(client, 'HTTP server not found', 404)
+            return
+        data = client.data
+        error = self._validate_http_config(data)
+        if error:
+            self._error(client, error, 400)
+            return
+        old = http_list[index]
+        srv = {'address': data.get('address', '0.0.0.0'), 'port': data['port']}
+        if data.get('name'):
+            srv['name'] = data['name']
+        if 'ssl' in data:
+            srv['ssl'] = data['ssl']
+        http_list[index] = srv
+        self._save_config()
+        # Check if restart needed (address/port/ssl changed)
+        needs_restart = (
+            old.get('address', '0.0.0.0') != srv.get('address', '0.0.0.0') or
+            old.get('port') != srv.get('port') or
+            old.get('ssl') != srv.get('ssl'))
+        if needs_restart and index < len(self._servers):
+            # Restart only this server
+            server, _ = self._servers[index]
+            server.close()
+            try:
+                self._servers[index] = self._create_http_server(srv)
+            except ValueError as e:
+                self._error(client, str(e), 400)
+                return
+        self._log.info("HTTP server updated")
+        client.respond({'ok': True})
+
+    def _handle_api_http_delete(self, client, user, index):
+        """Delete HTTP server"""
+        if not self._require_admin(client, user):
+            return
+        http_list = self._configuration.get('http', [])
+        if index < 0 or index >= len(http_list):
+            self._error(client, 'HTTP server not found', 404)
+            return
+        if len(http_list) <= 1:
+            self._error(client, 'Cannot delete last HTTP server', 400)
+            return
+        # Close server before removing from config
+        if index < len(self._servers):
+            server, _ = self._servers[index]
+            server.close()
+            del self._servers[index]
+        del http_list[index]
+        self._save_config()
+        self._log.info("HTTP server deleted")
         client.respond({'ok': True})

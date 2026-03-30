@@ -129,8 +129,12 @@ function showApp(initialData) {
   document.querySelector('.topbar').classList.remove('hidden');
   updateUserInfo();
   const hash = location.hash.slice(1);
-  const tab = ['ports', 'users'].includes(hash) ? hash : 'ports';
-  switchTab(tab, tab === 'ports' ? initialData : null);
+  if (['users', 'settings'].includes(hash)) {
+    switchTab(hash);
+  } else {
+    // ports tab - check for edit/new
+    switchTab('ports', initialData, hash);
+  }
 }
 
 // --- Login/Logout ---
@@ -162,16 +166,19 @@ function doLogout() {
 }
 
 // --- Tabs ---
-function switchTab(tab, data) {
+function switchTab(tab, data, hash) {
   document.querySelectorAll('nav button[data-tab]').forEach(
     b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('[id^="tab-"]').forEach(
     t => t.classList.toggle('hidden', t.id !== 'tab-' + tab));
-  if (tab === 'ports') loadPorts(data);
+  if (tab === 'ports') loadPorts(data, hash);
   else if (tab === 'users') loadUsers();
-  const newPath = tab === 'ports' ? location.pathname : '#' + tab;
-  if (location.hash !== (tab === 'ports' ? '' : '#' + tab))
-    history.pushState(null, '', newPath);
+  else if (tab === 'settings') loadSettings();
+  if (!hash) {
+    const newPath = tab === 'ports' ? location.pathname : '#' + tab;
+    if (location.hash !== (tab === 'ports' ? '' : '#' + tab))
+      history.pushState(null, '', newPath);
+  }
 }
 
 // --- Ports ---
@@ -186,7 +193,7 @@ const BYTESIZES = {8: 'EIGHTBITS', 7: 'SEVENBITS', 6: 'SIXBITS', 5: 'FIVEBITS'};
 const PARITIES = ['NONE', 'EVEN', 'ODD', 'MARK', 'SPACE'];
 const STOPBITS = {'1': 'ONE', '1.5': 'ONE_POINT_FIVE', '2': 'TWO'};
 
-function loadPorts(statusData) {
+function loadPorts(statusData, hash) {
   const root = $('ports-content');
   const render = (status, detected) => {
     detectedPorts = detected || [];
@@ -204,6 +211,25 @@ function loadPorts(statusData) {
     }
     status.ports.forEach((p, i) => root.appendChild(renderPortCard(p, i)));
     renderDetectedSection();
+    // Open editor if hash indicates
+    if (hash) {
+      const editMatch = hash.match(/^edit\/(.+)$/);
+      if (editMatch) {
+        const name = decodeURIComponent(editMatch[1]);
+        // Find port by name or fallback to index if name is "portN"
+        let idx = status.ports.findIndex(p => p.name === name);
+        if (idx < 0) {
+          const indexMatch = name.match(/^port(\d+)$/);
+          if (indexMatch) idx = parseInt(indexMatch[1]);
+        }
+        if (idx >= 0 && idx < status.ports.length) {
+          const config = buildConfigFromStatus(status.ports[idx]);
+          showPortEditor(idx, config, true);
+        }
+      } else if (hash === 'new') {
+        addPort();
+      }
+    }
   };
   if (statusData) {
     api('GET', '/api/detect').then(detected => {
@@ -514,7 +540,7 @@ function buildConfigFromStatus(port) {
   return config;
 }
 
-function showPortEditor(index, config) {
+function showPortEditor(index, config, skipHistory) {
   const root = $('ports-content');
   // Find existing card or append
   let container;
@@ -528,6 +554,12 @@ function showPortEditor(index, config) {
   container.className = 'port-edit';
   container.dataset.portIndex = index !== null ? index : 'new';
   container.replaceChildren();
+  // Update URL with name
+  if (!skipHistory) {
+    const name = config.name || (index !== null ? 'port' + index : null);
+    const hash = name ? '#edit/' + encodeURIComponent(name) : '#new';
+    history.pushState(null, '', hash);
+  }
 
   const title = index !== null ? 'Edit Port ' + index : 'New Port';
   container.appendChild(el('h3', title));
@@ -702,7 +734,10 @@ function showPortEditor(index, config) {
   saveBtn.onclick = () => savePort(index);
   actions.appendChild(saveBtn);
   const cancelBtn = el('button', 'Cancel', 'btn-secondary');
-  cancelBtn.onclick = () => loadPorts();
+  cancelBtn.onclick = () => {
+    history.pushState(null, '', location.pathname);
+    loadPorts();
+  };
   actions.appendChild(cancelBtn);
   if (index !== null) {
     const delBtn = el('button', 'Delete', 'btn-danger');
@@ -1187,7 +1222,10 @@ function savePort(index) {
   const config = collectConfig();
   const method = index !== null ? 'PUT' : 'POST';
   const path = index !== null ? '/api/ports/' + index : '/api/ports';
-  api(method, path, config).then(() => loadPorts()).catch(e => {
+  api(method, path, config).then(() => {
+    history.pushState(null, '', location.pathname);
+    loadPorts();
+  }).catch(e => {
     if (e !== 'unauthorized') alert(e);
   });
 }
@@ -1200,7 +1238,10 @@ function disconnectClient(portIdx, srvIdx, conIdx) {
 
 function deletePort(index) {
   if (!confirm('Delete port ' + index + '?')) return;
-  api('DELETE', '/api/ports/' + index).then(() => loadPorts()).catch(e => {
+  api('DELETE', '/api/ports/' + index).then(() => {
+    history.pushState(null, '', location.pathname);
+    loadPorts();
+  }).catch(e => {
     if (e !== 'unauthorized') alert(e);
   });
 }
@@ -1302,6 +1343,189 @@ async function addUser() {
   });
 }
 
+// --- Settings ---
+let currentSettings = null;
+
+function loadSettings() {
+  api('GET', '/api/settings').then(data => {
+    currentSettings = data;
+    renderSettings();
+  }).catch(e => {
+    if (e !== 'unauthorized') console.error('Failed to load settings:', e);
+  });
+}
+
+function renderSettings() {
+  const container = $('http-servers');
+  container.innerHTML = '';
+
+  // Session timeout card
+  const timeoutCard = document.createElement('div');
+  timeoutCard.className = 'section';
+  timeoutCard.dataset.httpIndex = 'session';
+  const timeout = currentSettings.session_timeout;
+  timeoutCard.innerHTML = `
+    <button class="btn-edit" title="Edit">&#9998;</button>
+    <h2>Session</h2>
+    <dl>
+      <dt>Timeout</dt>
+      <dd>${timeout != null ? timeout + 's' : 'default'}</dd>
+    </dl>
+  `;
+  timeoutCard.querySelector('.btn-edit').addEventListener('click', () => showSessionEditor());
+  container.appendChild(timeoutCard);
+
+  // HTTP server cards
+  const servers = currentSettings.http || [];
+  servers.forEach((srv, i) => {
+    container.appendChild(renderHttpCard(srv, i));
+  });
+}
+
+function renderHttpCard(srv, index) {
+  const card = document.createElement('div');
+  card.className = 'section';
+  card.dataset.httpIndex = index;
+  const ssl = srv.ssl ? ' (SSL)' : '';
+  const title = srv.name || `${srv.address}:${srv.port}${ssl}`;
+  card.innerHTML = `
+    <button class="btn-edit" title="Edit">&#9998;</button>
+    <h2>${title}</h2>
+    <dl>
+      <dt>Address</dt><dd>${srv.address || '0.0.0.0'}:${srv.port}${ssl}</dd>
+      ${srv.ssl ? `<dt>Cert</dt><dd>${srv.ssl.certfile || '-'}</dd>` : ''}
+    </dl>
+  `;
+  card.querySelector('.btn-edit').addEventListener('click', () => showHttpEditor(index, srv));
+  return card;
+}
+
+function showSessionEditor() {
+  const container = $('http-servers');
+  const existing = container.querySelector('[data-http-index="session"]');
+  const card = document.createElement('div');
+  card.className = 'section http-edit';
+  card.dataset.httpIndex = 'session';
+  const timeout = currentSettings.session_timeout;
+  card.innerHTML = `
+    <h3>Session</h3>
+    <div class="field-row">
+      <label>Timeout (seconds):</label>
+      <input type="number" id="edit-session-timeout" min="0" placeholder="3600" value="${timeout || ''}">
+    </div>
+    <div class="edit-buttons">
+      <button type="button" class="btn-primary" id="save-session-btn">Save</button>
+      <button type="button" id="cancel-session-btn">Cancel</button>
+    </div>
+  `;
+  existing.replaceWith(card);
+  card.querySelector('#save-session-btn').addEventListener('click', () => {
+    const val = $('edit-session-timeout').value;
+    const t = val.trim() === '' ? null : parseInt(val);
+    if (val.trim() !== '' && (isNaN(t) || t < 0)) {
+      alert('Invalid timeout value');
+      return;
+    }
+    api('PUT', '/api/settings', {session_timeout: t}).then(() => loadSettings())
+      .catch(e => { if (e !== 'unauthorized') alert(e); });
+  });
+  card.querySelector('#cancel-session-btn').addEventListener('click', () => loadSettings());
+}
+
+function showHttpEditor(index, srv) {
+  const container = $('http-servers');
+  const isNew = index === null;
+  let card;
+  if (isNew) {
+    card = document.createElement('div');
+    container.appendChild(card);
+  } else {
+    card = container.querySelector('[data-http-index="' + index + '"]');
+  }
+  card.className = 'section http-edit';
+  card.dataset.httpIndex = isNew ? 'new' : index;
+  const title = isNew ? 'New HTTP Server' : 'Edit HTTP Server';
+  card.innerHTML = `
+    <h3>${title}</h3>
+    <div class="field-row">
+      <label>Name:</label>
+      <input type="text" class="http-name" value="${srv.name || ''}" placeholder="optional">
+    </div>
+    <div class="field-row">
+      <label>Address:</label>
+      <input type="text" class="http-address" value="${srv.address || '0.0.0.0'}" placeholder="0.0.0.0">
+    </div>
+    <div class="field-row">
+      <label>Port:</label>
+      <input type="number" class="http-port" value="${srv.port || 8080}" min="1" max="65535">
+    </div>
+    <div class="field-row">
+      <label><input type="checkbox" class="http-ssl" ${srv.ssl ? 'checked' : ''}> SSL</label>
+    </div>
+    <div class="ssl-fields ${srv.ssl ? '' : 'hidden'}">
+      <div class="field-row">
+        <label>Certificate:</label>
+        <input type="text" class="http-certfile" value="${srv.ssl?.certfile || ''}" placeholder="/path/to/cert.pem">
+      </div>
+      <div class="field-row">
+        <label>Key:</label>
+        <input type="text" class="http-keyfile" value="${srv.ssl?.keyfile || ''}" placeholder="/path/to/key.pem">
+      </div>
+    </div>
+    <div class="edit-buttons">
+      <button type="button" class="btn-primary http-save-btn">Save</button>
+      ${!isNew ? '<button type="button" class="btn-danger http-delete-btn">Delete</button>' : ''}
+      <button type="button" class="http-cancel-btn">Cancel</button>
+    </div>
+  `;
+  card.querySelector('.http-ssl').addEventListener('change', e => {
+    card.querySelector('.ssl-fields').classList.toggle('hidden', !e.target.checked);
+  });
+  card.querySelector('.http-save-btn').addEventListener('click', () => saveHttpServer(isNew ? null : index, card));
+  card.querySelector('.http-cancel-btn').addEventListener('click', () => loadSettings());
+  if (!isNew) {
+    card.querySelector('.http-delete-btn').addEventListener('click', () => deleteHttpServer(index));
+  }
+}
+
+function saveHttpServer(index, card) {
+  const data = {
+    address: card.querySelector('.http-address').value.trim() || '0.0.0.0',
+    port: parseInt(card.querySelector('.http-port').value) || 8080,
+  };
+  const name = card.querySelector('.http-name').value.trim();
+  if (name) data.name = name;
+  if (card.querySelector('.http-ssl').checked) {
+    const certfile = card.querySelector('.http-certfile').value.trim();
+    const keyfile = card.querySelector('.http-keyfile').value.trim();
+    if (!certfile || !keyfile) {
+      alert('SSL requires certificate and key file paths');
+      return;
+    }
+    data.ssl = {certfile, keyfile};
+  }
+  const method = index === null ? 'POST' : 'PUT';
+  const path = index === null ? '/api/settings/http' : '/api/settings/http/' + index;
+  api(method, path, data).then(() => {
+    loadSettings();
+  }).catch(e => {
+    if (e !== 'unauthorized') alert(e);
+  });
+}
+
+function deleteHttpServer(index) {
+  if (!confirm('Delete this HTTP server?')) return;
+  api('DELETE', '/api/settings/http/' + index).then(() => {
+    loadSettings();
+  }).catch(e => {
+    if (e !== 'unauthorized') alert(e);
+  });
+}
+
+function addHttpServer() {
+  showHttpEditor(null, {address: '0.0.0.0', port: 8080});
+}
+
 // --- Init ---
 function init() {
   initTheme();
@@ -1311,13 +1535,14 @@ function init() {
   $('logout-btn').addEventListener('click', doLogout);
   $('add-user-btn').addEventListener('click', addUser);
   $('add-port-btn').addEventListener('click', addPort);
+  $('add-http-btn').addEventListener('click', addHttpServer);
 
   document.querySelectorAll('nav button[data-tab]').forEach(btn => {
     btn.addEventListener('click', () => switchTab(btn.dataset.tab));
   });
   window.addEventListener('hashchange', () => {
     const tab = location.hash.slice(1);
-    if (['ports', 'users'].includes(tab)) switchTab(tab);
+    if (['ports', 'users', 'settings'].includes(tab)) switchTab(tab);
   });
 
   api('GET', '/api/status').then(showApp).catch(showLogin);
