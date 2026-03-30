@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/ser2tcp -v -c %h/.config/ser2tcp.conf
+ExecStart=%h/.local/bin/ser2tcp
 
 [Install]
 WantedBy=default.target

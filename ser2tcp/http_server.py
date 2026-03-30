@@ -451,7 +451,7 @@ class HttpServerWrapper():
     def _validate_port_config(self, data):
         """Validate port configuration, return error string or None"""
         if not isinstance(data, dict):
-            return 'Invalid request'
+            return f'Expected JSON object, got {type(data).__name__}'
         if 'serial' not in data:
             return 'serial config required'
         serial = data['serial']
