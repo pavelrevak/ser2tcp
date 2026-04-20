@@ -45,6 +45,7 @@ class SerialProxy():
         self._reader_sock_w = None
         self._reader_running = False
         self._servers = []
+        self._monitors = []
         self._last_signals = 0
         self._last_signal_poll = 0
         self._signal_poll_interval = 0.1
@@ -289,6 +290,7 @@ class SerialProxy():
             if data:
                 self._log.debug("(%s): %s", self._serial_config['port'], data)
                 self.send_to_connections(data)
+                self._notify_monitors(2, data)  # RX
             else:
                 raise OSError("Serial reader closed")
         except (OSError, _serial.SerialException) as err:
@@ -375,3 +377,26 @@ class SerialProxy():
         """Send data to serial port"""
         if self._serial:
             self._serial.write(data)
+            self._notify_monitors(1, data)  # TX
+
+    def add_monitor(self, callback):
+        """Register monitor callback - receives (direction, data)"""
+        if callback not in self._monitors:
+            self._monitors.append(callback)
+
+    def remove_monitor(self, callback):
+        """Unregister monitor callback"""
+        if callback in self._monitors:
+            self._monitors.remove(callback)
+
+    def _notify_monitors(self, direction, data):
+        """Notify all monitors - direction: 1=TX, 2=RX"""
+        if self._monitors:
+            self._log.debug(
+                "Monitor notify: dir=%d len=%d monitors=%d",
+                direction, len(data), len(self._monitors))
+        for callback in list(self._monitors):
+            try:
+                callback(direction, data)
+            except Exception as e:
+                self._log.warning("Monitor callback error: %s", e)

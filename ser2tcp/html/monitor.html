@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ser2tcp monitor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1e1e1e; color: #ccc; font-family: sans-serif;
+  display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+.toolbar { display: flex; align-items: center; gap: 0.8em;
+  padding: 0.4em 0.8em; background: #2d2d2d; border-bottom: 1px solid #444;
+  flex-shrink: 0; }
+.toolbar .endpoint { color: #4a9eff; font-family: monospace; font-size: 0.95em; }
+.toolbar button { padding: 0.3em 0.8em; border: 1px solid #555;
+  border-radius: 4px; cursor: pointer; font-size: 0.85em;
+  background: #383838; color: #ccc; }
+.toolbar button:hover { background: #444; }
+.toolbar .btn-connect { background: #4c4; color: #fff; border-color: #4c4; }
+.toolbar .btn-connect:hover { background: #3b3; }
+.toolbar .btn-disconnect { background: #e55; color: #fff; border-color: #e55; }
+.toolbar .btn-disconnect:hover { background: #d44; }
+.toolbar .spacer { flex: 1; }
+.toolbar .status { font-size: 0.85em; }
+.toolbar .status .dot { font-size: 1.2em; vertical-align: middle; }
+.toolbar .status .dot-on { color: #4c4; }
+.toolbar .status .dot-off { color: #666; }
+.toolbar a { color: #4a9eff; text-decoration: none; font-size: 0.85em; }
+.toolbar a:hover { text-decoration: underline; }
+.toolbar label { font-size: 0.85em; display: flex; align-items: center; gap: 0.3em; }
+
+#output { flex: 1; overflow-y: auto; padding: 0.5em; font-family: monospace;
+  font-size: 14px; line-height: 1.4; white-space: pre-wrap;
+  word-break: break-all; background: #1e1e1e; }
+.rx { color: #0cc; }
+.tx { color: #f90; }
+.info { color: #888; font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <a href="/">&larr; Ports</a>
+  <span class="endpoint" id="endpoint-name"></span>
+  <span class="spacer"></span>
+  <label><input type="checkbox" id="auto-scroll" checked> Auto-scroll</label>
+  <span class="status" id="status">
+    <span class="dot dot-off">&#x25cf;</span> Disconnected
+  </span>
+  <button id="btn-clear">Clear</button>
+  <button id="btn-connect" class="btn-connect">Connect</button>
+</div>
+
+<div id="output"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+const pathParts = location.pathname.split('/monitor/');
+const portName = pathParts[1] || '';
+const token = localStorage.getItem('ser2tcp_token');
+
+$('endpoint-name').textContent = portName + ' (monitor)';
+document.title = 'ser2tcp monitor \u2014 ' + portName;
+
+let ws = null;
+let lastDir = 0;
+let pingInterval = null;
+
+function connect() {
+  if (ws) return;
+  const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  let url = scheme + '//' + location.host + '/ws/monitor/' + portName;
+  if (token) url += '?token=' + encodeURIComponent(token);
+  ws = new WebSocket(url);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => {
+    updateStatus(true); appendInfo('Connected'); lastDir = 0;
+    // Keepalive ping every 30s
+    pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send('');
+    }, 30000);
+  };
+  ws.onclose = ev => {
+    ws = null;
+    if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+    updateStatus(false);
+    appendInfo('Disconnected (code: ' + ev.code + ')');
+  };
+  ws.onmessage = ev => {
+    if (typeof ev.data === 'string') return;
+    const arr = new Uint8Array(ev.data);
+    if (arr.length < 2) return;
+    const dir = arr[0];
+    const data = arr.slice(1);
+    appendData(data, dir);
+  };
+}
+
+function disconnect() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+  if (ws) { ws.close(); ws = null; updateStatus(false); }
+}
+
+function updateStatus(connected) {
+  const el = $('status');
+  if (connected) {
+    el.innerHTML = '<span class="dot dot-on">&#x25cf;</span> Connected';
+    $('btn-connect').textContent = 'Disconnect';
+    $('btn-connect').className = 'btn-disconnect';
+    $('btn-connect').onclick = disconnect;
+  } else {
+    el.innerHTML = '<span class="dot dot-off">&#x25cf;</span> Disconnected';
+    $('btn-connect').textContent = 'Connect';
+    $('btn-connect').className = 'btn-connect';
+    $('btn-connect').onclick = connect;
+  }
+}
+
+function appendData(data, dir) {
+  const out = $('output');
+  const dirLabel = dir === 1 ? 'tx' : 'rx';
+  // Direction change = new line
+  if (lastDir !== 0 && lastDir !== dir) {
+    out.appendChild(document.createElement('br'));
+  }
+  lastDir = dir;
+  let text = '';
+  const flush = () => {
+    if (text) {
+      const span = document.createElement('span');
+      span.className = dirLabel;
+      span.textContent = text;
+      out.appendChild(span);
+      text = '';
+    }
+  };
+  for (let i = 0; i < data.length; i++) {
+    const b = data[i];
+    if (b >= 0x20 && b < 0x7f) {
+      text += String.fromCharCode(b);
+    } else {
+      text += '\\x' + b.toString(16).padStart(2, '0').toUpperCase();
+    }
+  }
+  flush();
+  if ($('auto-scroll').checked) {
+    out.scrollTop = out.scrollHeight;
+  }
+}
+
+function appendInfo(msg) {
+  const out = $('output');
+  const span = document.createElement('span');
+  span.className = 'info';
+  span.textContent = '--- ' + msg + ' ---\n';
+  out.appendChild(span);
+  lastDir = 0;
+  if ($('auto-scroll').checked) {
+    out.scrollTop = out.scrollHeight;
+  }
+}
+
+$('btn-clear').onclick = () => { $('output').innerHTML = ''; lastDir = 0; };
+$('btn-connect').onclick = connect;
+if (portName) connect();
+</script>
+</body>
+</html>

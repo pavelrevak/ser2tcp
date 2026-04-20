@@ -336,6 +336,13 @@ function renderPortCard(port, index) {
     });
     div.appendChild(sigDiv);
   }
+  // Monitor link (requires port name)
+  if (port.name) {
+    const monDiv = el('div', null, 'ws-links');
+    monDiv.innerHTML = '<a href="/monitor/' + encodeURIComponent(port.name)
+      + '" class="detect-link" target="_blank" rel="noopener">Monitor</a>';
+    div.appendChild(monDiv);
+  }
   // Show configured port or match
   if (ser.match) {
     const matchDiv = el('div', null, 'port-match-detail');

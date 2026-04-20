@@ -42,8 +42,8 @@ body { background: #1e1e1e; color: #ccc; font-family: sans-serif;
 #output { flex: 1; overflow-y: auto; padding: 0.5em; font-family: monospace;
   font-size: 14px; line-height: 1.4; white-space: pre-wrap;
   word-break: break-all; background: #1e1e1e; }
-.rx { color: #4c4; }
-.tx { color: #6cf; }
+.rx { color: #0cc; }
+.tx { color: #f90; }
 .info { color: #888; font-style: italic; }
 
 #input-row { display: flex; gap: 0.4em; padding: 0.4em;
@@ -96,6 +96,7 @@ document.title = 'ser2tcp raw \u2014 ' + endpoint;
 
 let ws = null;
 let signals = {};
+let pingInterval = null;
 
 function connect() {
   if (ws) return;
@@ -104,9 +105,15 @@ function connect() {
   if (token) url += '?token=' + encodeURIComponent(token);
   ws = new WebSocket(url);
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { updateStatus(true); appendInfo('Connected'); };
+  ws.onopen = () => {
+    updateStatus(true); appendInfo('Connected');
+    pingInterval = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send('');
+    }, 30000);
+  };
   ws.onclose = ev => {
     ws = null;
+    if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
     updateStatus(false);
     appendInfo('Disconnected (code: ' + ev.code + ')');
   };
@@ -123,6 +130,7 @@ function connect() {
 }
 
 function disconnect() {
+  if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
   if (ws) { ws.close(); ws = null; updateStatus(false); }
 }
 

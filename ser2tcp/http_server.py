@@ -15,6 +15,7 @@ import ser2tcp.connection_control as _control
 import ser2tcp.ip_filter as _ip_filter
 import ser2tcp.serial_proxy as _serial_proxy
 import ser2tcp.server as _server
+import ser2tcp.server_monitor as _server_monitor
 
 HTML_DIR = _pathlib.Path(__file__).parent / 'html'
 
@@ -48,7 +49,8 @@ class HttpServerWrapper():
                     auth_config = config['auth']
                     break
         self._auth = _http_auth.SessionManager(auth_config) if auth_config else None
-        self._ws_clients = {}  # uhttp client -> ServerWebSocket
+        self._ws_clients = {}  # uhttp client -> ServerWebSocket or ServerMonitor
+        self._monitor_servers = {}  # port name -> ServerMonitor
         self._servers = []  # list of (HttpServer, IpFilter or None)
         self._pending_reload = False
         for config in configs:
@@ -212,6 +214,8 @@ class HttpServerWrapper():
         """Cleanup expired sessions and handle pending reload"""
         if self._auth:
             self._auth.cleanup()
+        for monitor in list(self._monitor_servers.values()):
+            monitor.process_stale()
         if self._pending_reload:
             self._pending_reload = False
             self.reload_http_servers()
@@ -237,6 +241,10 @@ class HttpServerWrapper():
             client.respond({'error': 'Not found'}, status=404)
             return
         endpoint_name = path[4:]
+        # Monitor endpoint: /ws/monitor/<port-name>
+        if endpoint_name.startswith('monitor/'):
+            self._handle_ws_monitor(client, endpoint_name[8:])
+            return
         endpoints = self._get_ws_endpoints()
         ws_server = endpoints.get(endpoint_name)
         if not ws_server:
@@ -275,6 +283,38 @@ class HttpServerWrapper():
         client.accept_websocket()
         self._ws_clients[client] = ws_server
         ws_server.add_connection(client)
+
+    def _handle_ws_monitor(self, client, port_name):
+        """Handle WebSocket monitor upgrade request"""
+        # Find serial proxy by name
+        proxy = None
+        for p in self._serial_proxies:
+            if p.name == port_name:
+                proxy = p
+                break
+        if not proxy:
+            client.respond({'error': 'Port not found'}, status=404)
+            return
+        # Auth check (same as regular endpoints)
+        token = self._get_bearer_token(client)
+        if self._auth and not self._auth.is_empty:
+            if not token:
+                client.respond(
+                    {'error': 'Authorization required'}, status=401)
+                return
+            user = self._auth.authenticate(token)
+            if not user:
+                client.respond(
+                    {'error': 'Invalid or expired token'}, status=401)
+                return
+        # Get or create monitor server for this port
+        if port_name not in self._monitor_servers:
+            self._monitor_servers[port_name] = _server_monitor.ServerMonitor(
+                proxy, log=self._log)
+        monitor = self._monitor_servers[port_name]
+        client.accept_websocket()
+        self._ws_clients[client] = monitor
+        monitor.add_connection(client)
 
     def _get_bearer_token(self, client):
         """Extract token from Authorization header or query parameter"""
@@ -324,6 +364,10 @@ class HttpServerWrapper():
         if client.method == 'GET' \
                 and client.path.startswith('/raw/'):
             client.respond_file(str(HTML_DIR / 'raw.html'))
+            return
+        if client.method == 'GET' \
+                and client.path.startswith('/monitor/'):
+            client.respond_file(str(HTML_DIR / 'monitor.html'))
             return
         # Static files - no auth
         if client.method == 'GET' and not client.path.startswith('/api/'):
