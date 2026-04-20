@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background -->
+  <rect width="64" height="64" rx="10" fill="#1a6fa8"/>
+
+  <!-- Cable connecting DB9 (bottom-left) to RJ45 (top-right) -->
+  <path d="M52 30 Q52 44 29 44" fill="none" stroke="white" stroke-width="3"
+        stroke-linecap="round"/>
+
+  <!-- DB9 trapezoid (bottom-left) -->
+  <path d="M2 40 Q2 38 4 38 L28 38 Q30 38 30 40 L28 54 Q28 56 26 56 L6 56 Q4 56 4 54 Z"
+        fill="#0d4f7a" stroke="white" stroke-width="2"/>
+  <!-- Row 1: 5 pins evenly spaced -->
+  <circle cx="7"    cy="44" r="2" fill="white"/>
+  <circle cx="11.5" cy="44" r="2" fill="white"/>
+  <circle cx="16"   cy="44" r="2" fill="white"/>
+  <circle cx="20.5" cy="44" r="2" fill="white"/>
+  <circle cx="25"   cy="44" r="2" fill="white"/>
+  <!-- Row 2: 4 pins offset -->
+  <circle cx="9.25"  cy="51" r="2" fill="white"/>
+  <circle cx="13.75" cy="51" r="2" fill="white"/>
+  <circle cx="18.25" cy="51" r="2" fill="white"/>
+  <circle cx="22.75" cy="51" r="2" fill="white"/>
+
+  <!-- RJ45 (top-right) -->
+  <rect x="44" y="8" width="17" height="22" rx="2" fill="#0d4f7a" stroke="white" stroke-width="2"/>
+  <!-- 6 pins at top -->
+  <line x1="47.5" y1="8"  x2="47.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <line x1="49.5" y1="8"  x2="49.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <line x1="51.5" y1="8"  x2="51.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <line x1="53.5" y1="8"  x2="53.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <line x1="55.5" y1="8"  x2="55.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <line x1="57.5" y1="8"  x2="57.5" y2="14" stroke="white" stroke-width="1.2"/>
+  <!-- Latch tab -->
+  <rect x="47" y="29" width="11" height="4" rx="1.5" fill="#0d4f7a" stroke="white" stroke-width="1.8"/>
+</svg>

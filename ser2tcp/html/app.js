@@ -378,10 +378,12 @@ function renderPortCard(port, index) {
       };
       li.appendChild(urlEl);
       if (s.data !== false) {
+        const tokenParam = s.token
+          ? '?token=' + encodeURIComponent(s.token) : '';
         const linksDiv = el('div', null, 'ws-links');
-        linksDiv.innerHTML = '<a href="/xterm/' + s.endpoint
+        linksDiv.innerHTML = '<a href="/xterm/' + s.endpoint + tokenParam
           + '" class="detect-link" target="_blank" rel="noopener">Terminal</a>'
-          + '<a href="/raw/' + s.endpoint
+          + '<a href="/raw/' + s.endpoint + tokenParam
           + '" class="detect-link" target="_blank" rel="noopener">Raw</a>';
         li.appendChild(linksDiv);
       }
@@ -877,6 +879,23 @@ function renderServerBox(srv, index, total) {
   wsToken.placeholder = '(use global auth)';
   wsToken.value = srv.token || '';
   wsRow2.appendChild(wsToken);
+  const wsGenBtn = el('button', null, 'btn-icon');
+  wsGenBtn.type = 'button';
+  wsGenBtn.title = 'Generate token';
+  wsGenBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>';
+  wsGenBtn.onclick = () => { wsToken.value = crypto.randomUUID(); };
+  wsRow2.appendChild(wsGenBtn);
+  const wsCopyBtn = el('button', null, 'btn-icon');
+  wsCopyBtn.type = 'button';
+  wsCopyBtn.title = 'Copy token';
+  wsCopyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  wsCopyBtn.onclick = () => {
+    if (wsToken.value) navigator.clipboard.writeText(wsToken.value).then(() => {
+      wsCopyBtn.style.color = 'var(--success)';
+      setTimeout(() => { wsCopyBtn.style.color = ''; }, 1000);
+    });
+  };
+  wsRow2.appendChild(wsCopyBtn);
   wsDiv.appendChild(wsRow2);
   box.appendChild(wsDiv);
 
@@ -1401,7 +1420,7 @@ function showUserEditor(login, user) {
     <div class="edit-buttons">
       <button type="button" class="btn-primary user-save-btn">Save</button>
       ${!isNew ? '<button type="button" class="btn-danger user-delete-btn">Delete</button>' : ''}
-      <button type="button" class="user-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-secondary user-cancel-btn">Cancel</button>
     </div>
   `;
   card.querySelector('.user-save-btn').addEventListener('click', () => saveUser(isNew ? null : login, card));
@@ -1425,7 +1444,7 @@ function showTokenEditor(tokenId, tok) {
   card.className = 'section user-edit';
   card.dataset.tokenId = isNew ? 'new' : tokenId;
   const title = isNew ? 'New API Token' : 'Edit API Token';
-  const tokenValue = tok.token || generateToken();
+  const tokenValue = tok.token || crypto.randomUUID();
   card.innerHTML = `
     <h3>${title}</h3>
     <div class="field-row">
@@ -1445,11 +1464,11 @@ function showTokenEditor(tokenId, tok) {
     <div class="edit-buttons">
       <button type="button" class="btn-primary token-save-btn">Save</button>
       ${!isNew ? '<button type="button" class="btn-danger token-delete-btn">Delete</button>' : ''}
-      <button type="button" class="token-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-secondary token-cancel-btn">Cancel</button>
     </div>
   `;
   card.querySelector('.token-generate-btn').addEventListener('click', () => {
-    card.querySelector('.token-value-input').value = generateToken();
+    card.querySelector('.token-value-input').value = crypto.randomUUID();
   });
   card.querySelector('.token-copy-btn').addEventListener('click', () => {
     const input = card.querySelector('.token-value-input');
@@ -1468,11 +1487,6 @@ function showTokenEditor(tokenId, tok) {
   card.querySelector('.token-name').focus();
 }
 
-function generateToken() {
-  const arr = new Uint8Array(32);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, b => b.toString(16).padStart(2, '0')).join('');
-}
 
 async function saveUser(login, card) {
   const isNew = login === null;
@@ -1641,7 +1655,7 @@ function showSessionEditor() {
     </div>
     <div class="edit-buttons">
       <button type="button" class="btn-primary" id="save-session-btn">Save</button>
-      <button type="button" id="cancel-session-btn">Cancel</button>
+      <button type="button" class="btn btn-secondary" id="cancel-session-btn">Cancel</button>
     </div>
   `;
   existing.replaceWith(card);
@@ -1701,7 +1715,7 @@ function showHttpEditor(index, srv) {
     <div class="edit-buttons">
       <button type="button" class="btn-primary http-save-btn">Save</button>
       ${!isNew ? '<button type="button" class="btn-danger http-delete-btn">Delete</button>' : ''}
-      <button type="button" class="http-cancel-btn">Cancel</button>
+      <button type="button" class="btn btn-secondary http-cancel-btn">Cancel</button>
     </div>
   `;
   card.querySelector('.http-ssl').addEventListener('change', e => {
