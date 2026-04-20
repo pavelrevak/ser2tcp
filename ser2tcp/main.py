@@ -94,9 +94,13 @@ def main():
     """Main"""
     parser = _argparse.ArgumentParser(description=DESCRIPTION_STR)
     parser.add_argument('-V', '--version', action='version', version=VERSION_STR)
-    parser.add_argument(
+    log_group = parser.add_mutually_exclusive_group()
+    log_group.add_argument(
         '-v', '--verbose', action='count', default=0,
-        help="Increase verbosity")
+        help="Verbose output (-v: debug)")
+    log_group.add_argument(
+        '-q', '--quiet', action='store_true',
+        help="No output")
     parser.add_argument(
         '-u', '--usb', action='store_true',
         help="List USB serial devices and exit")
@@ -119,7 +123,12 @@ def main():
 
     _logging.basicConfig(format='%(levelname).1s: %(message)s (%(filename)s:%(lineno)s)')
     log = _logging.getLogger('ser2tcp')
-    log.setLevel((30, 20, 10)[min(2, args.verbose)])
+    if args.quiet:
+        log.setLevel(_logging.CRITICAL)
+    elif args.verbose:
+        log.setLevel(_logging.DEBUG)
+    else:
+        log.setLevel(_logging.INFO)
 
     config_path = args.config
     if _os.path.exists(config_path):
