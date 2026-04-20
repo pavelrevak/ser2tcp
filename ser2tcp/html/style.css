@@ -5,7 +5,7 @@
   --bg-input-focus: #fff;
   --text-input-focus: #333;
   --bg-server: #f8f8f8;
-  --border: #e0e0e0;
+  --border: transparent;
   --border-light: #eee;
   --text: #333;
   --text-secondary: #666;
@@ -36,7 +36,7 @@
   --bg-input-focus: #111;
   --text-input-focus: #eee;
   --bg-server: #2c2c2c;
-  --border: #484848;
+  --border: transparent;
   --border-light: #3a3a3a;
   --text: #ddd;
   --text-secondary: #eee;
@@ -68,7 +68,7 @@
     --bg-input-focus: #111;
     --text-input-focus: #eee;
     --bg-server: #2c2c2c;
-    --border: #484848;
+    --border: transparent;
     --border-light: #3a3a3a;
     --text: #ddd;
     --text-secondary: #eee;
@@ -254,6 +254,21 @@ button { padding: 0.4em 1em; border: none; border-radius: 6px;
 .detected-section { margin-top: 2em; padding-top: 1em;
   border-top: 1px solid var(--border); }
 .detected-section h3 { color: var(--text-muted); margin: 0 0 0.5em; }
+.detected-grid { display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 0.8em; }
+.detected-card { opacity: 0.75; }
+.detected-card { display: flex; flex-direction: column; padding-bottom: 3em; }
+.detected-card .port-card-header { margin-bottom: 0.3em; }
+.detected-card .port-card-title { font-weight: bold; font-family: monospace; font-size: 1.1em; }
+.detected-card .port-card-desc { color: var(--text-muted); font-size: 0.85em; margin-top: 0.1em; }
+.detected-card .detect-attrs { flex: 1; }
+.detected-add-btn { position: absolute; bottom: 0.8em; right: 0.8em;
+  font-size: 0.85em; }
+.detect-attrs { display: grid; grid-template-columns: max-content 1fr;
+  gap: 0.1em 0.8em; font-size: 0.85em; margin: 0; }
+.detect-attrs dt { color: var(--text-muted); }
+.detect-attrs dd { margin: 0; }
 .btn-disconnect { background: none; border: none; color: var(--text-muted);
   padding: 0 0.2em; cursor: pointer; vertical-align: middle; }
 .btn-disconnect:hover { color: var(--danger); }

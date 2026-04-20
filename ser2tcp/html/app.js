@@ -442,44 +442,38 @@ function renderDetectedSection() {
   if (!detectedPorts.length) return;
   const sec = el('div', null, 'detected-section');
   sec.appendChild(el('h3', 'Detected serial ports'));
-  const ul = el('ul');
+  const grid = el('div', null, 'detected-grid');
   detectedPorts.forEach(p => {
-    const li = el('li');
-    // Clickable device name → add port with direct path
-    const devLink = el('a', p.device);
-    devLink.href = '#';
-    devLink.className = 'detect-link';
-    devLink.title = 'Add new port with ' + p.device;
-    devLink.onclick = e => {
-      e.preventDefault();
-      addPortFromDetected(p, null);
-    };
-    li.appendChild(devLink);
-    if (p.description) li.appendChild(document.createTextNode(
-      ' \u2014 ' + p.description));
+    const card = el('div', null, 'section detected-card');
+    // Header: device path + add button
+    const header = el('div', null, 'port-card-header');
+    header.appendChild(el('div', p.device, 'port-card-title'));
+    if (p.description) header.appendChild(el('div', p.description, 'port-card-desc'));
+    const addBtn = el('button', '+ Add', 'btn btn-primary detected-add-btn');
+    addBtn.title = 'Add new port with ' + p.device;
+    addBtn.onclick = () => addPortFromDetected(p, null);
+    card.appendChild(header);
+    // Match attributes
     const attrs = MATCH_ATTRS.filter(a => p[a]);
     if (attrs.length) {
-      const dl = el('dl');
+      const dl = el('dl', null, 'detect-attrs');
       attrs.forEach(a => {
         dl.appendChild(el('dt', a));
-        // Clickable match value → add port with this match checked
         const dd = document.createElement('dd');
         const matchLink = el('a', p[a]);
         matchLink.href = '#';
         matchLink.className = 'detect-link';
         matchLink.title = 'Add new port with match ' + a + '=' + p[a];
-        matchLink.onclick = e => {
-          e.preventDefault();
-          addPortFromDetected(p, a);
-        };
+        matchLink.onclick = e => { e.preventDefault(); addPortFromDetected(p, a); };
         dd.appendChild(matchLink);
         dl.appendChild(dd);
       });
-      li.appendChild(dl);
+      card.appendChild(dl);
     }
-    ul.appendChild(li);
+    card.appendChild(addBtn);
+    grid.appendChild(card);
   });
-  sec.appendChild(ul);
+  sec.appendChild(grid);
   root.appendChild(sec);
 }
 
